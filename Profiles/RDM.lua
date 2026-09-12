@@ -26,7 +26,7 @@ JOB_PROFILES.RDM = {
     --------------------------------------------------------
 
     self_buffs = {
-        { name = 'Refresh III',   interval = 15 },
+       `
         { name = 'Haste II',      interval = 23 },
         { name = 'Temper II',     interval = 5  },
         { name = 'Gain-STR',      interval = 15 },

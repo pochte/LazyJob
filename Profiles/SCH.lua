@@ -30,6 +30,7 @@ JOB_PROFILES.SCH = {
     self_buffs = {
         { name = {'Thunderstorm II', 'Thunderstorm'}, interval = 4, require_buff = 'Dark Arts' },
         { name = 'Aurorastorm',                        interval = 4, require_buff = 'Light Arts' },
+		name={'Klimaform'}, interval = 3},
     },
 
     --------------------------------------------------------
