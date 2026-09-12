@@ -20,8 +20,10 @@ JOB_PROFILES.BLM = {
     -- SUPPORT / BUFFS
     --------------------------------------------------------
 
-    haste_active = false,
-    self_buffs = {},
+ self_buffs = {
+        { name = {'Thunderstorm'}, interval = 3, require_buff = 'Dark Arts' },
+		name={'Klimaform'}, interval = 3},
+}
 
     --------------------------------------------------------
     -- MAGIC BURST
@@ -46,8 +48,20 @@ JOB_PROFILES.BLM = {
     cure_bot_active = true,
 
     cure_tiers = {
-        {min_missing = 100,max_missing = 350,spells = {'Cure II','Cure'}},
-        {min_missing = 351,max_missing = 800,spells = {'Cure III','Cure II'}},
-        {min_missing = 801,max_missing = 999999,spells = {'Cure IV','Cure III'}},
+        {
+            min_missing = 100,
+            max_missing = 350,
+            spells = { 'Cure II', 'Cure' },
+        },
+        {
+            min_missing = 351,
+            max_missing = 800,
+            spells = { 'Cure III', 'Cure II' },
+        },
+        {
+            min_missing = 801,
+            max_missing = 999999,
+            spells = { 'Cure IV', 'Cure III' },
+        },
     },
 }
