@@ -2,9 +2,59 @@
 -- BLM JOB PROFILE
 ------------------------------------------------------------
 --
--- Black Mage -- magic burst spell tiers (Tier VI cap).
+-- Black Mage
+--
+-- SOLO:
+--   Repeatedly nukes targets without waiting for skillchains.
+--
+-- PLAYER PARTY:
+--   Uses Magic Burst mode and waits for skillchains.
+--
+-- Trust-only parties count as SOLO.
 --
 -- Loaded by Lazy.lua into JOB_PROFILES.BLM
+------------------------------------------------------------
+
+
+------------------------------------------------------------
+-- PARTY MODE
+------------------------------------------------------------
+
+local function BLM_Has_Real_Player_Party()
+    local party = windower.ffxi.get_party()
+
+    if not party then
+        return false
+    end
+
+    -- p0 is ourselves, so start at p1.
+    for i = 1, 5 do
+        local member = party['p' .. i]
+
+        if member
+            and member.name
+            and member.name ~= ''
+            and not member.trust
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
+
+function BLM_Get_Mode()
+    if BLM_Has_Real_Player_Party() then
+        return 'BURST'
+    end
+
+    return 'SOLO'
+end
+
+
+------------------------------------------------------------
+-- BLM JOB PROFILE
 ------------------------------------------------------------
 
 JOB_PROFILES.BLM = {
@@ -39,6 +89,28 @@ JOB_PROFILES.BLM = {
         Thunder  = { 'Thunder VI', 'Thunder V', 'Thunder IV' },
         Water    = { 'Water VI', 'Water V', 'Water IV' },
         Darkness = { 'Comet', 'Impact' },
+    },
+
+    --------------------------------------------------------
+    -- SOLO NUKE MODE
+    --------------------------------------------------------
+    --
+    -- Used when there are no actual player party members.
+    -- Trusts do NOT count as players.
+    --
+    -- Lazy.lua can repeatedly cast from this list instead
+    -- of waiting for a skillchain / magic burst window.
+    --------------------------------------------------------
+
+    solo_mode = true,
+
+    solo_spells = {
+        'Fire VI',
+        'Blizzard VI',
+        'Aero VI',
+        'Stone VI',
+        'Thunder VI',
+        'Water VI',
     },
 
     --------------------------------------------------------
