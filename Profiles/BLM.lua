@@ -21,7 +21,7 @@ JOB_PROFILES.BLM = {
     --------------------------------------------------------
 
     self_buffs = {
-        { name = {'Thunderstorm'}, interval = 3, require_buff = 'Dark Arts' },
+        { name = {'Windstorm'}, interval = 3, require_buff = 'Dark Arts' },
         { name = {'Klimaform'}, interval = 3 },
     },
 

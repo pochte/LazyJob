@@ -6,7 +6,6 @@ config  = require('config')
 res     = require('resources')
 packets = require('packets')
 
-
 ------------------------------------------------------------
 -- MODULES & FALLBACK DEFINITIONS
 ------------------------------------------------------------
@@ -15,14 +14,13 @@ dofile(windower.addon_path .. 'skillchain.lua')
 dofile(windower.addon_path .. 'magicburst.lua')
 dofile(windower.addon_path .. 'settings.lua')
 
--- Fallback structures to prevent nil comparison errors
-ws_sc_starter    = ws_sc_starter or {}
-ws_sc_closers    = ws_sc_closers or {}
-needed_buffs     = needed_buffs or {}
-food             = food or nil
-spell_blacklist  = spell_blacklist or {}
-haste_blacklist  = haste_blacklist or {}
-subjob_abilities = subjob_abilities or {}
+ws_sc_starter      = ws_sc_starter or {}
+ws_sc_closers      = ws_sc_closers or {}
+needed_buffs       = needed_buffs or {}
+food               = food or nil
+spell_blacklist    = spell_blacklist or {}
+haste_blacklist    = haste_blacklist or {}
+subjob_abilities   = subjob_abilities or {}
 haste_samba_active = haste_samba_active or false
 
 targeting = targeting or {
@@ -31,7 +29,6 @@ targeting = targeting or {
     within_origin = true,
     only_unclaimed = true,
 }
-
 
 ------------------------------------------------------------
 -- ADDON
@@ -42,7 +39,6 @@ _addon.author   = 'Ulli'
 _addon.version  = '0.9'
 _addon.commands = {'lazy'}
 
-
 ------------------------------------------------------------
 -- GLOBAL STATE
 ------------------------------------------------------------
@@ -52,7 +48,6 @@ isCasting    = false
 isBusy       = 0
 buffactive   = {}
 Action_Delay = 2
-
 
 ------------------------------------------------------------
 -- MOVEMENT / POSITION
@@ -77,7 +72,6 @@ local PATH_STUCK_EPSILON      = 1
 local origin_unreachable_since   = nil
 local ORIGIN_UNREACHABLE_TIMEOUT = 600
 
-
 ------------------------------------------------------------
 -- COMBAT STATE
 ------------------------------------------------------------
@@ -88,9 +82,6 @@ local ws_index           = 1
 local PlayerH            = 0
 local engaged_since      = nil
 
--- DNC: set true whenever any weaponskill fires (Combat's starter/closer,
--- or SC_Monitor's closer), so Try_DNC_Actions knows to fire Reverse
--- Flourish right after -- consulted only when current_job == 'DNC'.
 local dnc_flourish_pending = false
 
 local DNC_WALTZ_TIERS = {
@@ -100,7 +91,6 @@ local DNC_WALTZ_TIERS = {
     'Curing Waltz II',
     'Curing Waltz',
 }
-
 
 ------------------------------------------------------------
 -- CAST TRACKING
@@ -115,7 +105,6 @@ local party_buff_last_cast   = {}
 local entrust_last_cast      = {}
 
 local pending_cast = nil
-
 
 ------------------------------------------------------------
 -- MP REST
@@ -132,11 +121,9 @@ local MP_REST_JOBS = {
 
 local mp_resting = false
 
-
 function MP_Rest_Allowed()
     return current_job and MP_REST_JOBS[current_job] == true
 end
-
 
 function Start_MP_Rest()
     if not MP_Rest_Allowed() then return false end
@@ -145,11 +132,11 @@ function Start_MP_Rest()
     local player = windower.ffxi.get_player()
     if not player or not player.vitals then return false end
 
-    -- Never attempt to rest while engaged.
     if player.status == 1 then return false end
 
-    -- Don't interrupt a cast/action.
-    if isCasting or isBusy > 0 or pending_cast then return false end
+    if isCasting or isBusy > 0 or pending_cast then
+        return false
+    end
 
     if player.vitals.mp and player.vitals.mp < MP_REST_THRESHOLD then
         windower.send_command('input /heal on')
@@ -160,14 +147,12 @@ function Start_MP_Rest()
     return false
 end
 
-
 function Stop_MP_Rest()
     if not mp_resting then return end
 
     windower.send_command('input /heal off')
     mp_resting = false
 end
-
 
 function MP_Rest_Tick()
     if not MP_Rest_Allowed() then
@@ -180,7 +165,6 @@ function MP_Rest_Tick()
     local player = windower.ffxi.get_player()
     if not player or not player.vitals then return false end
 
-    -- Never rest while fighting.
     if player.status == 1 then
         if mp_resting then
             Stop_MP_Rest()
@@ -188,7 +172,6 @@ function MP_Rest_Tick()
         return false
     end
 
-    -- If MP is healthy, stop resting.
     if player.vitals.mp and player.vitals.mp >= MP_REST_THRESHOLD then
         if mp_resting then
             Stop_MP_Rest()
@@ -196,7 +179,6 @@ function MP_Rest_Tick()
         return false
     end
 
-    -- Casting/action takes priority over resting.
     if isCasting or isBusy > 0 or pending_cast then
         return false
     end
@@ -204,14 +186,12 @@ function MP_Rest_Tick()
     return Start_MP_Rest()
 end
 
-
 ------------------------------------------------------------
 -- JOB STATE
 ------------------------------------------------------------
 
 current_job    = nil
 active_profile = nil
-
 
 ------------------------------------------------------------
 -- JOB PROFILES
@@ -248,14 +228,13 @@ for _, job in ipairs(profile_list) do
     else
         windower.add_to_chat(
             123,
-            '[Lazy] Profile not found: ' .. job .. '.lua → using DEFAULT'
+            '[Lazy] Profile not found: ' .. job .. '.lua -> using DEFAULT'
         )
     end
 end
 
 JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
-
 
 ------------------------------------------------------------
 -- BACKLINE & DISENGAGE OVERRIDES
@@ -270,7 +249,6 @@ local function Enforce_Backline_Rules()
     end
 end
 
-
 local function Ensure_Debuff_Target()
     local player = windower.ffxi.get_player()
     if not player or not active_profile then return end
@@ -284,7 +262,6 @@ local function Ensure_Debuff_Target()
         )
     end
 end
-
 
 ------------------------------------------------------------
 -- MOVEMENT DETECTION
@@ -316,7 +293,6 @@ function Is_Moving()
     return moving
 end
 
-
 ------------------------------------------------------------
 -- JOB PROFILE
 ------------------------------------------------------------
@@ -329,7 +305,6 @@ function Update_Job_Profile()
 
     if job == current_job then return end
 
-    -- Job changed: make sure we aren't carrying an old rest state.
     if mp_resting then
         Stop_MP_Rest()
     end
@@ -348,7 +323,6 @@ function Update_Job_Profile()
     windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
 end
 
-
 ------------------------------------------------------------
 -- PROFILE HELPERS
 ------------------------------------------------------------
@@ -357,21 +331,17 @@ function Get_WS_Starter()
     return active_profile and active_profile.ws_sc_starter or ws_sc_starter
 end
 
-
 function Get_WS_Closers()
     return active_profile and active_profile.ws_sc_closers or ws_sc_closers
 end
-
 
 function Get_Needed_Buffs()
     return active_profile and active_profile.needed_buffs or needed_buffs
 end
 
-
 function Get_Food()
     return active_profile and active_profile.food or food
 end
-
 
 ------------------------------------------------------------
 -- SETTINGS
@@ -390,7 +360,6 @@ defaults = {
 }
 
 settings = config.load(defaults)
-
 
 ------------------------------------------------------------
 -- INCOMING PACKETS
@@ -432,7 +401,6 @@ windower.register_event('incoming chunk', function(id, data)
     end
 end)
 
-
 ------------------------------------------------------------
 -- DEATH WATCH
 ------------------------------------------------------------
@@ -445,7 +413,6 @@ local death_reported        = false
 local aggro_queue     = {}
 local AGGRO_QUEUE_CAP = 10
 
-
 local function Resolve_Attack_Name(param)
     if not param or param == 0 then return nil end
 
@@ -457,7 +424,6 @@ local function Resolve_Attack_Name(param)
 
     return hit and hit.en or nil
 end
-
 
 windower.register_event('incoming chunk', function(id, data)
     if id ~= 0x028 then return end
@@ -513,7 +479,6 @@ windower.register_event('incoming chunk', function(id, data)
     end
 end)
 
-
 function Death_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
@@ -548,7 +513,6 @@ function Death_Monitor()
         coroutine.sleep(0.5)
     end
 end
-
 
 ------------------------------------------------------------
 -- ENGAGEMENT SYNC
@@ -649,7 +613,6 @@ function Engagement_Sync()
     end
 end
 
-
 ------------------------------------------------------------
 -- OUTGOING PACKETS
 ------------------------------------------------------------
@@ -661,7 +624,6 @@ windower.register_event('outgoing chunk', function(id, data)
     PlayerH = action.Rotation
 end)
 
-
 ------------------------------------------------------------
 -- STATUS CHANGE LISTENERS
 ------------------------------------------------------------
@@ -671,7 +633,6 @@ windower.register_event('status change', function(new_status_id)
         Enforce_Backline_Rules()
     end
 end)
-
 
 ------------------------------------------------------------
 -- COMMANDS
@@ -877,7 +838,6 @@ windower.register_event('addon command', function(...)
     end
 end)
 
-
 ------------------------------------------------------------
 -- WEAPONSKILLS
 ------------------------------------------------------------
@@ -895,7 +855,6 @@ function Next_WS()
     return ws
 end
 
-
 ------------------------------------------------------------
 -- HEADING / MOVEMENT
 ------------------------------------------------------------
@@ -912,7 +871,6 @@ function HeadingTo(x, y)
     return math.atan2(dx, dy) - 1.5708
 end
 
-
 function TurnToTarget()
     local target = windower.ffxi.get_mob_by_target('t')
     if not target then return end
@@ -923,7 +881,6 @@ function TurnToTarget()
         windower.ffxi.turn(HeadingTo(target.x, target.y))
     end
 end
-
 
 ------------------------------------------------------------
 -- ORIGIN DISTANCE
@@ -943,7 +900,6 @@ function Origin_Distance(x, y, z)
         (x - origin_x)^2 + (y - origin_y)^2
     )
 end
-
 
 function Set_Origin()
     local player =
@@ -970,7 +926,6 @@ function Set_Origin()
         .. origin_radius
     )
 end
-
 
 function Path_To_Origin()
     if not origin_x then return end
@@ -1079,7 +1034,6 @@ function Path_To_Origin()
     end
 end
 
-
 ------------------------------------------------------------
 -- TARGETING HELPERS
 ------------------------------------------------------------
@@ -1129,7 +1083,6 @@ function Find_Named_Target(target_name)
     return -1
 end
 
-
 function Is_Targetable_Monster(name)
     if not name then return false end
 
@@ -1141,7 +1094,6 @@ function Is_Targetable_Monster(name)
 
     return false
 end
-
 
 function Find_Nearest_Target()
     local mob_array = windower.ffxi.get_mob_array()
@@ -1192,578 +1144,6 @@ function Find_Nearest_Target()
 
     return -1
 end
-
-
-------------------------------------------------------------
--- MONITORS
-------------------------------------------------------------
-
-local FOLLOW_MELEE_RANGE = 3
-
-
-function Follow_Monitor()
-    while Start_Engine do
-        local target = windower.ffxi.get_mob_by_target('t')
-
-        if not target then
-            windower.ffxi.follow(0)
-
-        elseif isCasting or isBusy > 0 then
-            windower.ffxi.follow(0)
-
-        else
-            local distance =
-                target.distance and math.sqrt(target.distance)
-
-            if distance and distance <= FOLLOW_MELEE_RANGE then
-                windower.ffxi.follow(0)
-            else
-                windower.ffxi.follow(target.index)
-            end
-        end
-
-        coroutine.sleep(0.2)
-    end
-end
-
-
-function Engine()
-    while Start_Engine do
-        local player = windower.ffxi.get_player()
-
-        if player then
-            Update_Job_Profile()
-
-            Enforce_Backline_Rules()
-
-            buffactive =
-                convert_buff_list(player.buffs or {})
-
-            ----------------------------------------------------
-            -- MP REST
-            --
-            -- Only WHM/RDM/BLM/GEO.
-            -- Only when idle and below 500 MP.
-            -- Casting automatically cancels rest.
-            ----------------------------------------------------
-            MP_Rest_Tick()
-
-            if isBusy < 1 then
-                pcall(Combat)
-            else
-                isBusy = isBusy - 1
-            end
-        end
-
-        coroutine.sleep(1)
-    end
-end
-
-
-function SC_Monitor()
-    while Start_Engine do
-        local player = windower.ffxi.get_player()
-
-        if player
-            and player.status == 1
-            and isBusy < 1
-            and player.vitals.tp >= 1000
-        then
-            local target =
-                windower.ffxi.get_mob_by_target('t')
-
-            if target
-                and sc_ready
-                and sc_ready(target.id)
-            then
-                local options =
-                    sc_get_ws(target.id) or {}
-
-                local fired = false
-
-                for _, ws in ipairs(options) do
-                    if fired then break end
-
-                    for _, closer in ipairs(Get_WS_Closers() or {}) do
-                        if ws == closer then
-                            windower.send_command(
-                                'input /ws "' .. closer .. '" <t>'
-                            )
-
-                            isBusy = Action_Delay
-                            dnc_flourish_pending = true
-                            fired = true
-                            break
-                        end
-                    end
-                end
-            end
-        end
-
-        coroutine.sleep(0.5)
-    end
-end
-
-
-function Target_Monitor()
-    while Start_Engine do
-        local player = windower.ffxi.get_player()
-
-        if player and player.status ~= 1 then
-            local target =
-                windower.ffxi.get_mob_by_target('t')
-
-            if target
-                and settings.target ~= ''
-                and target.id ~= player.id
-            then
-                local name_ok =
-                    string.lower(target.name or '')
-                    == string.lower(settings.target)
-
-                local in_range = true
-
-                if origin_x and target.x then
-                    in_range =
-                        Origin_Distance(
-                            target.x,
-                            target.y,
-                            target.z
-                        ) <= origin_radius
-                end
-
-                if not name_ok
-                    or not in_range
-                    or target.claim_id ~= 0
-                then
-                    windower.add_to_chat(
-                        2,
-                        'Invalid target (' .. target.name .. ') - resetting'
-                    )
-
-                    windower.send_command(
-                        'input /target <me>'
-                    )
-
-                elseif target.distance <= 1
-                    and active_profile.auto_engage ~= false
-                then
-                    windower.send_command(
-                        'input /attack on'
-                    )
-
-                    windower.ffxi.follow(target.index)
-                end
-            end
-        end
-
-        coroutine.sleep(0.5)
-    end
-end
-
-
-function Targeting()
-    while Start_Engine do
-        local player = windower.ffxi.get_player()
-
-        if player and player.status ~= 1 then
-            if settings.assist ~= '' then
-                windower.send_command(
-                    'input /assist ' .. settings.assist
-                )
-
-                local target =
-                    windower.ffxi.get_mob_by_target('t')
-
-                if target and target.claim_id ~= 0 then
-                    windower.ffxi.follow(target.index)
-
-                    if active_profile.auto_engage ~= false then
-                        windower.send_command(
-                            'input /attack on'
-                        )
-                    end
-                end
-
-                if not lockon_done
-                    and active_profile.auto_engage ~= false
-                then
-                    windower.send_command('input /lockon')
-                    lockon_done = true
-                end
-
-            elseif settings.autotarget then
-                local target_id
-
-                local expected_name =
-                    (
-                        settings.target
-                        and settings.target ~= ''
-                    )
-                    and settings.target
-                    or nil
-
-                if expected_name then
-                    target_id =
-                        Find_Named_Target(settings.target)
-                else
-                    target_id =
-                        Find_Nearest_Target()
-                end
-
-                if target_id > 0 then
-                    pathing_to_origin = false
-                    path_tick = 0
-
-                    windower.ffxi.follow(target_id)
-
-                    local mob =
-                        windower.ffxi.get_mob_by_index(target_id)
-
-                    local in_range = true
-
-                    if origin_x and mob and mob.x then
-                        in_range =
-                            Origin_Distance(
-                                mob.x,
-                                mob.y,
-                                mob.z
-                            ) <= origin_radius
-                    end
-
-                    local still_valid =
-                        mob
-                        and mob.valid_target
-                        and mob.hpp
-                        and mob.hpp > 0
-                        and mob.claim_id == 0
-                        and in_range
-                        and (
-                            expected_name
-                            and string.lower(mob.name or '')
-                                == string.lower(expected_name)
-                            or (
-                                not expected_name
-                                and Is_Targetable_Monster(mob.name)
-                            )
-                        )
-
-                    if still_valid then
-                        local distance =
-                            math.sqrt(mob.distance)
-
-                        if distance < 1 then
-                            windower.send_command(
-                                'input /target "' .. mob.name .. '"'
-                            )
-
-                            if active_profile.auto_engage ~= false then
-                                windower.send_command(
-                                    'input /attack on'
-                                )
-
-                                if not lockon_done then
-                                    windower.send_command(
-                                        'input /lockon'
-                                    )
-
-                                    lockon_done = true
-                                end
-                            end
-                        end
-                    end
-                else
-                    Path_To_Origin()
-                end
-            end
-        end
-
-        coroutine.sleep(0.5)
-    end
-end
-
-
-------------------------------------------------------------
--- COMBAT
-------------------------------------------------------------
-
-------------------------------------------------------------
--- DNC ROTATION
-------------------------------------------------------------
-
-function Try_DNC_Actions()
-    local player = windower.ffxi.get_player()
-
-    if not player or not player.vitals then
-        return false
-    end
-
-    if player.vitals.hpp and player.vitals.hpp <= 50 then
-        for _, waltz in ipairs(DNC_WALTZ_TIERS) do
-            local ability =
-                res.job_abilities:with('name', waltz)
-
-            if ability
-                and Can_Cast_Ability(waltz)
-                and player.vitals.mp >= (ability.mp_cost or 0)
-            then
-                windower.add_to_chat(
-                    167,
-                    '[Lazy] Emergency Waltz -- '
-                    .. waltz
-                    .. ' ('
-                    .. player.vitals.hpp
-                    .. '% HP)'
-                )
-
-                Cast_Ability(waltz)
-                return true
-            end
-        end
-    end
-
-    local target =
-        windower.ffxi.get_mob_by_target('t')
-
-    if not target
-        or not target.distance
-        or math.sqrt(target.distance) > 5
-    then
-        return false
-    end
-
-    local stacks =
-        buffactive['Finishing Move'] or 0
-
-    if (
-        stacks >= 5
-        or dnc_flourish_pending
-    )
-        and Can_Cast_Ability('Reverse Flourish')
-    then
-        windower.send_command(
-            'input /ja "Reverse Flourish" <me>'
-        )
-
-        isBusy = Action_Delay
-        dnc_flourish_pending = false
-
-        return true
-    end
-
-    if stacks < 5
-        and Can_Cast_Ability('Box Step')
-    then
-        windower.send_command(
-            'input /ja "Box Step" <t>'
-        )
-
-        isBusy = Action_Delay
-
-        return true
-    end
-
-    return false
-end
-
-
-function Combat()
-    local player = windower.ffxi.get_player()
-    if not player then return end
-
-    local target  =
-        windower.ffxi.get_mob_by_target('t')
-
-    local starter = Get_WS_Starter()
-
-    if player.status == 1 then
-        if not engaged_since then
-            engaged_since = os.clock()
-        end
-    else
-        engaged_since = nil
-    end
-
-    --------------------------------------------------------
-    -- Don't do combat actions while MP-resting.
-    --------------------------------------------------------
-
-    if mp_resting then
-        return
-    end
-
-    if active_profile
-        and active_profile.provoke_if_stuck
-        and player.status == 1
-        and target
-        and engaged_since
-        and (
-            os.clock() - engaged_since
-        ) >= (
-            active_profile.stuck_threshold or 10
-        )
-    then
-        if Can_Cast_Ability('Provoke') then
-            Cast_Ability('Provoke')
-        end
-
-        TurnToTarget()
-    end
-
-    local magic_burst_ok =
-        active_profile
-        and active_profile.magic_burst
-
-    if magic_burst_ok
-        and active_profile.magic_burst_requires_buff
-    then
-        magic_burst_ok =
-            buffactive[
-                active_profile.magic_burst_requires_buff
-            ]
-            and true
-            or false
-    end
-
-    if magic_burst_ok then
-        if Try_Magic_Burst
-            and Try_Magic_Burst()
-        then
-            return
-        end
-
-        if current_job == 'BLM'
-            or current_job == 'GEO'
-            or current_job == 'SCH'
-            or current_job == 'NIN'
-        then
-            return
-        end
-    end
-
-    if active_profile
-        and active_profile.dnc_rotation
-        and current_job == 'DNC'
-    then
-        if Try_DNC_Actions() then
-            return
-        end
-    end
-
-    if target
-        and target.distance
-        and math.sqrt(target.distance) <= 3
-        and player.vitals.tp >= 3000
-        and isBusy == 0
-        and not isCasting
-        and starter
-        and starter[1]
-        and active_profile.use_weaponskills ~= false
-    then
-        windower.send_command(
-            'input /ws "' .. starter[1] .. '" <t>'
-        )
-
-        isBusy = Action_Delay
-        dnc_flourish_pending = true
-
-        return
-    end
-
-    if player.status ~= 1
-        and active_profile.auto_engage ~= false
-    then
-        return
-    end
-
-    lockon_done = false
-
-    if player.vitals.tp >= 400
-        and target
-        and target.distance
-        and math.sqrt(target.distance) <= 3
-    then
-        local recasts =
-            windower.ffxi.get_ability_recasts()
-
-        for _, ability_name in ipairs(
-            Get_Needed_Buffs() or {}
-        ) do
-            if not buffactive[ability_name] then
-                if ability_name == 'Food' then
-                    local food_item = Get_Food()
-
-                    if food_item then
-                        windower.send_command(
-                            'input /item "'
-                            .. food_item
-                            .. '" <me>'
-                        )
-
-                        isBusy = Action_Delay
-                        return
-                    end
-                else
-                    local ability =
-                        res.job_abilities:with(
-                            'name',
-                            ability_name
-                        )
-
-                    if ability
-                        and recasts[ability.recast_id] == 0
-                    then
-                        Cast_Ability(ability_name)
-                        return
-                    end
-                end
-            end
-        end
-    end
-
-    TurnToTarget()
-
-    if target
-        and target.distance
-        and math.sqrt(target.distance) <= 3
-    then
-        local tp = player.vitals.tp
-
-        if sc_active
-            and not sc_active(target.id)
-            and starter
-            and tp >= starter[2]
-            and active_profile.use_weaponskills ~= false
-        then
-            windower.send_command(
-                'input /ws "' .. starter[1] .. '" <t>'
-            )
-
-            isBusy = Action_Delay
-            dnc_flourish_pending = true
-
-            return
-        end
-
-        if settings.spell_active
-            and Can_Cast_Spell(settings.spell)
-            and not Is_Blacklisted(target.name)
-        then
-            Cast_Spell(settings.spell)
-        end
-
-    elseif settings.spell_active
-        and Can_Cast_Spell(settings.spell)
-        and not (
-            target
-            and Is_Blacklisted(target.name)
-        )
-    then
-        Cast_Spell(settings.spell)
-    end
-end
-
-
 ------------------------------------------------------------
 -- SPELL / ABILITY HELPERS
 ------------------------------------------------------------
@@ -1851,11 +1231,6 @@ function Cast_Spell(spell_name)
         return false
     end
 
-    --------------------------------------------------------
-    -- MP REST
-    -- Casting always wins over resting.
-    --------------------------------------------------------
-
     if mp_resting then
         Stop_MP_Rest()
     end
@@ -1896,11 +1271,6 @@ function Cast_Spell_On(spell_name, target)
         return false
     end
 
-    --------------------------------------------------------
-    -- MP REST
-    -- Casting always cancels resting first.
-    --------------------------------------------------------
-
     if mp_resting then
         Stop_MP_Rest()
     end
@@ -1926,7 +1296,6 @@ function Cast_Ability(ability_name)
 
     isBusy = Action_Delay
 end
-
 
 ------------------------------------------------------------
 -- BUFF SYSTEM
@@ -2456,8 +1825,7 @@ function Buff_Tick()
             end
         end
     end
-
-    --------------------------------------------------------
+        --------------------------------------------------------
     -- 7. HASTE HANDLING
     --------------------------------------------------------
 
@@ -2681,7 +2049,6 @@ function Buff_Monitor()
     end
 end
 
-
 ------------------------------------------------------------
 -- CURE BOT
 ------------------------------------------------------------
@@ -2890,7 +2257,6 @@ function Cure_Monitor()
     end
 end
 
-
 ------------------------------------------------------------
 -- TRUST RESUMMON
 ------------------------------------------------------------
@@ -3021,8 +2387,6 @@ function Trust_Monitor()
         coroutine.sleep(1)
     end
 end
-
-
 ------------------------------------------------------------
 -- BUFF LIST CONVERTER
 ------------------------------------------------------------
@@ -3046,7 +2410,6 @@ function convert_buff_list(bufflist)
 
     return buffs
 end
-
 
 ------------------------------------------------------------
 -- INIT
