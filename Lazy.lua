@@ -122,7 +122,8 @@ local MP_REST_JOBS = {
 local mp_resting = false
 
 function MP_Rest_Allowed()
-    return current_job and MP_REST_JOBS[current_job] == true
+    return current_job
+        and MP_REST_JOBS[current_job] == true
 end
 
 function Start_MP_Rest()
@@ -138,7 +139,9 @@ function Start_MP_Rest()
         return false
     end
 
-    if player.vitals.mp and player.vitals.mp < MP_REST_THRESHOLD then
+    if player.vitals.mp
+        and player.vitals.mp < MP_REST_THRESHOLD
+    then
         windower.send_command('input /heal on')
         mp_resting = true
         return true
@@ -172,7 +175,9 @@ function MP_Rest_Tick()
         return false
     end
 
-    if player.vitals.mp and player.vitals.mp >= MP_REST_THRESHOLD then
+    if player.vitals.mp
+        and player.vitals.mp >= MP_REST_THRESHOLD
+    then
         if mp_resting then
             Stop_MP_Rest()
         end
@@ -244,7 +249,9 @@ local function Enforce_Backline_Rules()
     local player = windower.ffxi.get_player()
     if not player or not active_profile then return end
 
-    if player.status == 1 and active_profile.auto_engage == false then
+    if player.status == 1
+        and active_profile.auto_engage == false
+    then
         windower.send_command('input /attack off')
     end
 end
@@ -280,7 +287,9 @@ function Is_Moving()
         local dx = mob.x - last_known_pos.x
         local dy = mob.y - last_known_pos.y
 
-        if (dx * dx + dy * dy) > (move_threshold * move_threshold) then
+        if (dx * dx + dy * dy)
+            > (move_threshold * move_threshold)
+        then
             moving = true
         end
     end
@@ -320,7 +329,10 @@ function Update_Job_Profile()
     party_buff_last_cast   = {}
     entrust_last_cast      = {}
 
-    windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
+    windower.add_to_chat(
+        2,
+        '[Lazy] Main job: ' .. job
+    )
 end
 
 ------------------------------------------------------------
@@ -328,19 +340,27 @@ end
 ------------------------------------------------------------
 
 function Get_WS_Starter()
-    return active_profile and active_profile.ws_sc_starter or ws_sc_starter
+    return active_profile
+        and active_profile.ws_sc_starter
+        or ws_sc_starter
 end
 
 function Get_WS_Closers()
-    return active_profile and active_profile.ws_sc_closers or ws_sc_closers
+    return active_profile
+        and active_profile.ws_sc_closers
+        or ws_sc_closers
 end
 
 function Get_Needed_Buffs()
-    return active_profile and active_profile.needed_buffs or needed_buffs
+    return active_profile
+        and active_profile.needed_buffs
+        or needed_buffs
 end
 
 function Get_Food()
-    return active_profile and active_profile.food or food
+    return active_profile
+        and active_profile.food
+        or food
 end
 
 ------------------------------------------------------------
@@ -371,17 +391,26 @@ windower.register_event('incoming chunk', function(id, data)
     local action = packets.parse('incoming', data)
     local player = windower.ffxi.get_player()
 
-    if not player or action.Actor ~= player.id then return end
+    if not player
+        or action.Actor ~= player.id
+    then
+        return
+    end
 
     if action.Category == 4 then
         isCasting = false
 
         if pending_cast then
-            local matches  = action.Param == pending_cast.spell_id
-            local reaction = action['Target 1 Action 1 Reaction']
+            local matches =
+                action.Param == pending_cast.spell_id
+
+            local reaction =
+                action['Target 1 Action 1 Reaction']
 
             if matches and reaction == 0 then
-                pending_cast.store[pending_cast.key] = pending_cast.sent_at
+                pending_cast.store[
+                    pending_cast.key
+                ] = pending_cast.sent_at
             end
 
             pending_cast = nil
@@ -433,18 +462,27 @@ windower.register_event('incoming chunk', function(id, data)
 
     if not player then return end
 
-    local current    = windower.ffxi.get_mob_by_target('t')
-    local current_id = current and current.id
+    local current =
+        windower.ffxi.get_mob_by_target('t')
 
-    local target_count = action['Target Count'] or 1
+    local current_id =
+        current and current.id
+
+    local target_count =
+        action['Target Count'] or 1
 
     for t = 1, target_count do
         if action['Target ' .. t .. ' ID'] == player.id then
-            local reaction = action['Target ' .. t .. ' Action 1 Reaction']
+            local reaction =
+                action[
+                    'Target ' .. t ..
+                    ' Action 1 Reaction'
+                ]
 
             if reaction == 0 then
                 local actor_id = action.Actor
-                local actor    = windower.ffxi.get_mob_by_id(actor_id)
+                local actor =
+                    windower.ffxi.get_mob_by_id(actor_id)
 
                 last_damage_source =
                     actor and actor.name
@@ -452,9 +490,12 @@ windower.register_event('incoming chunk', function(id, data)
                     or 'something unseen'
 
                 last_damage_source_id = actor_id
-                last_damage_kind = Resolve_Attack_Name(action.Param)
+                last_damage_kind =
+                    Resolve_Attack_Name(action.Param)
 
-                if actor_id and actor_id ~= current_id then
+                if actor_id
+                    and actor_id ~= current_id
+                then
                     local already_queued = false
 
                     for _, qid in ipairs(aggro_queue) do
@@ -465,10 +506,14 @@ windower.register_event('incoming chunk', function(id, data)
                     end
 
                     if not already_queued then
-                        aggro_queue[#aggro_queue + 1] = actor_id
+                        aggro_queue[#aggro_queue + 1] =
+                            actor_id
 
                         if #aggro_queue > AGGRO_QUEUE_CAP then
-                            table.remove(aggro_queue, 1)
+                            table.remove(
+                                aggro_queue,
+                                1
+                            )
                         end
                     end
                 end
@@ -491,17 +536,25 @@ function Death_Monitor()
             if not death_reported then
                 death_reported = true
 
-                local cause = last_damage_source or 'unknown causes'
+                local cause =
+                    last_damage_source
+                    or 'unknown causes'
 
                 if last_damage_kind then
-                    cause = cause .. ' (' .. last_damage_kind .. ')'
+                    cause =
+                        cause
+                        .. ' ('
+                        .. last_damage_kind
+                        .. ')'
                 elseif last_damage_source then
                     cause = cause .. ' (melee)'
                 end
 
                 windower.add_to_chat(
                     167,
-                    '[Lazy] You died -- killed by ' .. cause .. '. Stopping Lazy.'
+                    '[Lazy] You died -- killed by '
+                    .. cause
+                    .. '. Stopping Lazy.'
                 )
 
                 Start_Engine = false
@@ -524,7 +577,10 @@ function Engagement_Sync()
 
         if player then
             for i = #aggro_queue, 1, -1 do
-                local candidate = windower.ffxi.get_mob_by_id(aggro_queue[i])
+                local candidate =
+                    windower.ffxi.get_mob_by_id(
+                        aggro_queue[i]
+                    )
 
                 if not candidate
                     or not candidate.valid_target
@@ -535,13 +591,19 @@ function Engagement_Sync()
                         and candidate.claim_id ~= player.id
                     )
                 then
-                    table.remove(aggro_queue, i)
+                    table.remove(
+                        aggro_queue,
+                        i
+                    )
                 end
             end
         end
 
-        if player and player.status == 1 then
-            local current = windower.ffxi.get_mob_by_target('t')
+        if player
+            and player.status == 1
+        then
+            local current =
+                windower.ffxi.get_mob_by_target('t')
 
             local current_ok =
                 current
@@ -554,9 +616,19 @@ function Engagement_Sync()
             if not current_ok then
                 local switched = false
 
-                while #aggro_queue > 0 and not switched do
-                    local candidate_id = table.remove(aggro_queue, 1)
-                    local candidate = windower.ffxi.get_mob_by_id(candidate_id)
+                while #aggro_queue > 0
+                    and not switched
+                do
+                    local candidate_id =
+                        table.remove(
+                            aggro_queue,
+                            1
+                        )
+
+                    local candidate =
+                        windower.ffxi.get_mob_by_id(
+                            candidate_id
+                        )
 
                     if candidate
                         and candidate.valid_target
@@ -574,16 +646,22 @@ function Engagement_Sync()
                         )
 
                         windower.send_command(
-                            'input /target "' .. candidate.name .. '"'
+                            'input /target "'
+                            .. candidate.name
+                            .. '"'
                         )
 
                         switched = true
                     end
                 end
 
-                if not switched and last_damage_source_id then
+                if not switched
+                    and last_damage_source_id
+                then
                     local attacker =
-                        windower.ffxi.get_mob_by_id(last_damage_source_id)
+                        windower.ffxi.get_mob_by_id(
+                            last_damage_source_id
+                        )
 
                     if attacker
                         and attacker.valid_target
@@ -593,7 +671,10 @@ function Engagement_Sync()
                             attacker.claim_id == 0
                             or attacker.claim_id == player.id
                         )
-                        and (not current or attacker.id ~= current.id)
+                        and (
+                            not current
+                            or attacker.id ~= current.id
+                        )
                     then
                         windower.add_to_chat(
                             2,
@@ -602,7 +683,9 @@ function Engagement_Sync()
                         )
 
                         windower.send_command(
-                            'input /target "' .. attacker.name .. '"'
+                            'input /target "'
+                            .. attacker.name
+                            .. '"'
                         )
                     end
                 end
@@ -620,7 +703,9 @@ end
 windower.register_event('outgoing chunk', function(id, data)
     if id ~= 0x015 then return end
 
-    local action = packets.parse('outgoing', data)
+    local action =
+        packets.parse('outgoing', data)
+
     PlayerH = action.Rotation
 end)
 
@@ -666,7 +751,8 @@ windower.register_event('addon command', function(...)
     end
 
     if command == 'start' then
-        local player = windower.ffxi.get_player()
+        local player =
+            windower.ffxi.get_player()
 
         if player
             and player.vitals
@@ -680,14 +766,20 @@ windower.register_event('addon command', function(...)
             return
         end
 
-        windower.add_to_chat(2, '....Starting Lazy Helper....')
+        windower.add_to_chat(
+            2,
+            '....Starting Lazy Helper....'
+        )
 
         Set_Origin()
 
-        if Start_Engine then return end
+        if Start_Engine then
+            return
+        end
 
         Start_Engine = true
         mp_resting = false
+        lockon_done = false
 
         self_buff_last_cast    = {}
         self_ability_last_cast = {}
@@ -726,28 +818,47 @@ windower.register_event('addon command', function(...)
     end
 
     if command == 'stop' then
-        windower.add_to_chat(2, '....Stopping Lazy Helper....')
+        windower.add_to_chat(
+            2,
+            '....Stopping Lazy Helper....'
+        )
 
         if mp_resting then
             Stop_MP_Rest()
         end
 
+        windower.ffxi.follow(0)
+        windower.ffxi.run(false)
+
         Start_Engine = false
+        lockon_done = false
+
         return
     end
 
     if command == 'reload' then
-        windower.add_to_chat(2, '....Reloading Config....')
+        windower.add_to_chat(
+            2,
+            '....Reloading Config....'
+        )
+
         config.reload(settings)
-        dofile(windower.addon_path .. 'settings.lua')
+        dofile(
+            windower.addon_path .. 'settings.lua'
+        )
+
         return
     end
 
     if command == 'save' then
-        local player = windower.ffxi.get_player()
+        local player =
+            windower.ffxi.get_player()
 
         if player then
-            config.save(settings, player.name)
+            config.save(
+                settings,
+                player.name
+            )
         end
 
         return
@@ -756,45 +867,109 @@ windower.register_event('addon command', function(...)
     if command == 'show' then
         Update_Job_Profile()
 
-        windower.add_to_chat(11, 'Main job: ' .. tostring(current_job))
-        windower.add_to_chat(11, 'Autotarget: ' .. tostring(settings.autotarget))
-        windower.add_to_chat(11, 'Spell: ' .. settings.spell)
-        windower.add_to_chat(11, 'Use Spell: ' .. tostring(settings.spell_active))
-        windower.add_to_chat(11, 'Weaponskill: ' .. settings.weaponskill)
-        windower.add_to_chat(11, 'Use Weaponskill: ' .. tostring(settings.weaponskill_active))
-        windower.add_to_chat(11, 'Target: ' .. settings.target)
-        windower.add_to_chat(11, 'Buffs: ' .. tostring(settings.buffs_active))
-        windower.add_to_chat(11, 'Cure Bot: ' .. tostring(settings.cure_active))
+        windower.add_to_chat(
+            11,
+            'Main job: '
+            .. tostring(current_job)
+        )
+
+        windower.add_to_chat(
+            11,
+            'Autotarget: '
+            .. tostring(settings.autotarget)
+        )
+
+        windower.add_to_chat(
+            11,
+            'Spell: '
+            .. settings.spell
+        )
+
+        windower.add_to_chat(
+            11,
+            'Use Spell: '
+            .. tostring(settings.spell_active)
+        )
+
+        windower.add_to_chat(
+            11,
+            'Weaponskill: '
+            .. settings.weaponskill
+        )
+
+        windower.add_to_chat(
+            11,
+            'Use Weaponskill: '
+            .. tostring(settings.weaponskill_active)
+        )
+
+        windower.add_to_chat(
+            11,
+            'Target: '
+            .. settings.target
+        )
+
+        windower.add_to_chat(
+            11,
+            'Buffs: '
+            .. tostring(settings.buffs_active)
+        )
+
+        windower.add_to_chat(
+            11,
+            'Cure Bot: '
+            .. tostring(settings.cure_active)
+        )
+
         return
     end
 
     if command == 'autotarget' then
-        settings.autotarget = (args[2] == 'on')
-        windower.add_to_chat(3, 'Autotarget: ' .. tostring(settings.autotarget))
+        settings.autotarget =
+            (args[2] == 'on')
+
+        windower.add_to_chat(
+            3,
+            'Autotarget: '
+            .. tostring(settings.autotarget)
+        )
+
         return
     end
 
     if command == 'target' then
-        settings.target = args[2] or ''
+        settings.target =
+            args[2] or ''
+
         return
     end
 
     if command == 'assist' then
-        settings.assist = args[2] or ''
+        settings.assist =
+            args[2] or ''
 
         windower.add_to_chat(
             2,
             'Assist: '
-            .. (settings.assist ~= '' and settings.assist or 'OFF')
+            .. (
+                settings.assist ~= ''
+                and settings.assist
+                or 'OFF'
+            )
         )
 
         if settings.assist ~= '' then
-            windower.send_command('input /assist ' .. settings.assist)
+            windower.send_command(
+                'input /assist '
+                .. settings.assist
+            )
 
             if active_profile
                 and active_profile.auto_engage == false
             then
-                windower.send_command('wait 0.4; input /attack off')
+                windower.send_command(
+                    'wait 0.4; input /attack off'
+                )
             end
         end
 
@@ -802,30 +977,49 @@ windower.register_event('addon command', function(...)
     end
 
     if command == 'buffs' then
-        settings.buffs_active = (args[2] ~= 'off')
-        windower.add_to_chat(3, 'Buffs: ' .. tostring(settings.buffs_active))
+        settings.buffs_active =
+            (args[2] ~= 'off')
+
+        windower.add_to_chat(
+            3,
+            'Buffs: '
+            .. tostring(settings.buffs_active)
+        )
+
         return
     end
 
     if command == 'cure' then
-        settings.cure_active = (args[2] ~= 'off')
-        windower.add_to_chat(3, 'Cure Bot: ' .. tostring(settings.cure_active))
+        settings.cure_active =
+            (args[2] ~= 'off')
+
+        windower.add_to_chat(
+            3,
+            'Cure Bot: '
+            .. tostring(settings.cure_active)
+        )
+
         return
     end
 
     if command == 'range' then
-        local value = tonumber(args[2])
+        local value =
+            tonumber(args[2])
 
         if value then
             origin_radius = value
+
             windower.add_to_chat(
                 2,
-                'Origin radius set to ' .. origin_radius .. ' yalms'
+                'Origin radius set to '
+                .. origin_radius
+                .. ' yalms'
             )
         else
             windower.add_to_chat(
                 2,
-                'Current radius: ' .. origin_radius
+                'Current radius: '
+                .. origin_radius
             )
         end
 
@@ -843,14 +1037,20 @@ end)
 ------------------------------------------------------------
 
 function Next_WS()
-    local closers = Get_WS_Closers()
+    local closers =
+        Get_WS_Closers()
 
-    if not closers or #closers == 0 then
+    if not closers
+        or #closers == 0
+    then
         return nil
     end
 
-    local ws = closers[ws_index]
-    ws_index = (ws_index % #closers) + 1
+    local ws =
+        closers[ws_index]
+
+    ws_index =
+        (ws_index % #closers) + 1
 
     return ws
 end
@@ -861,7 +1061,9 @@ end
 
 function HeadingTo(x, y)
     local player =
-        windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
+        windower.ffxi.get_mob_by_id(
+            windower.ffxi.get_player().id
+        )
 
     if not player then return 0 end
 
@@ -872,13 +1074,26 @@ function HeadingTo(x, y)
 end
 
 function TurnToTarget()
-    local target = windower.ffxi.get_mob_by_target('t')
+    local target =
+        windower.ffxi.get_mob_by_target('t')
+
     if not target then return end
 
-    local desired = math.deg(HeadingTo(target.x, target.y))
+    local desired =
+        math.deg(
+            HeadingTo(
+                target.x,
+                target.y
+            )
+        )
 
     if math.abs(PlayerH - desired) > 10 then
-        windower.ffxi.turn(HeadingTo(target.x, target.y))
+        windower.ffxi.turn(
+            HeadingTo(
+                target.x,
+                target.y
+            )
+        )
     end
 end
 
@@ -887,23 +1102,29 @@ end
 ------------------------------------------------------------
 
 function Origin_Distance(x, y, z)
-    if not origin_x then return math.huge end
+    if not origin_x then
+        return math.huge
+    end
 
     if origin_z
         and z
-        and math.abs(z - origin_z) > origin_z_tolerance
+        and math.abs(z - origin_z)
+            > origin_z_tolerance
     then
         return math.huge
     end
 
     return math.sqrt(
-        (x - origin_x)^2 + (y - origin_y)^2
+        (x - origin_x)^2
+        + (y - origin_y)^2
     )
 end
 
 function Set_Origin()
     local player =
-        windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
+        windower.ffxi.get_mob_by_id(
+            windower.ffxi.get_player().id
+        )
 
     if not player then return end
 
@@ -931,12 +1152,18 @@ function Path_To_Origin()
     if not origin_x then return end
 
     local player =
-        windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
+        windower.ffxi.get_mob_by_id(
+            windower.ffxi.get_player().id
+        )
 
     if not player then return end
 
     local distance =
-        Origin_Distance(player.x, player.y, player.z)
+        Origin_Distance(
+            player.x,
+            player.y,
+            player.z
+        )
 
     if distance == math.huge then
         windower.ffxi.run(false)
@@ -947,13 +1174,16 @@ function Path_To_Origin()
             origin_unreachable_since = now
         end
 
-        if (now - origin_unreachable_since)
-            >= ORIGIN_UNREACHABLE_TIMEOUT
+        if (
+            now - origin_unreachable_since
+        ) >= ORIGIN_UNREACHABLE_TIMEOUT
         then
             windower.add_to_chat(
                 2,
                 '[Lazy] Origin unreachable for '
-                .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60)
+                .. math.floor(
+                    ORIGIN_UNREACHABLE_TIMEOUT / 60
+                )
                 .. ' min -- re-anchoring origin here and retargeting.'
             )
 
@@ -966,7 +1196,9 @@ function Path_To_Origin()
                 167,
                 '[Lazy] Origin unreachable at current elevation -- stopping autopath. '
                 .. 'Will re-anchor here after '
-                .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60)
+                .. math.floor(
+                    ORIGIN_UNREACHABLE_TIMEOUT / 60
+                )
                 .. ' min if still stuck.'
             )
 
@@ -975,6 +1207,7 @@ function Path_To_Origin()
 
         pathing_to_origin = false
         path_tick = 0
+
         return
     end
 
@@ -986,14 +1219,23 @@ function Path_To_Origin()
         local now = os.clock()
 
         if not path_last_distance
-            or distance < path_last_distance - PATH_STUCK_EPSILON
+            or distance
+                < path_last_distance
+                    - PATH_STUCK_EPSILON
         then
-            path_last_distance      = distance
-            path_last_progress_time = now
-            path_stuck_alerted      = false
+            path_last_distance =
+                distance
+
+            path_last_progress_time =
+                now
+
+            path_stuck_alerted =
+                false
 
         elseif path_last_progress_time
-            and (now - path_last_progress_time) >= PATH_STUCK_TIMEOUT
+            and (
+                now - path_last_progress_time
+            ) >= PATH_STUCK_TIMEOUT
         then
             windower.ffxi.run(false)
 
@@ -1010,15 +1252,24 @@ function Path_To_Origin()
 
             pathing_to_origin = false
             path_tick = 0
+
             return
         end
 
-        path_tick = path_tick + 1
+        path_tick =
+            path_tick + 1
 
         if path_tick % 4 == 1 then
             windower.ffxi.run(false)
+
         elseif path_tick % 4 == 2 then
-            windower.ffxi.turn(HeadingTo(origin_x, origin_y))
+            windower.ffxi.turn(
+                HeadingTo(
+                    origin_x,
+                    origin_y
+                )
+            )
+
         else
             windower.ffxi.run(true)
         end
@@ -1039,16 +1290,55 @@ end
 ------------------------------------------------------------
 
 function Find_Named_Target(target_name)
-    local mob_array = windower.ffxi.get_mob_array()
+    if not target_name
+        or target_name == ''
+    then
+        return -1
+    end
+
+    local mob_array =
+        windower.ffxi.get_mob_array()
+
     local candidates = {}
 
     for key, mob in pairs(mob_array) do
-        if mob.distance then
-            candidates[#candidates + 1] = {
-                key = key,
-                mob = mob,
-                dist = math.sqrt(mob.distance),
-            }
+        if mob
+            and mob.distance
+            and mob.valid_target
+            and mob.hpp
+            and mob.hpp > 0
+            and mob.name
+            and mob.name ~= ''
+        then
+            local in_origin = true
+
+            if origin_x
+                and mob.x
+            then
+                in_origin =
+                    Origin_Distance(
+                        mob.x,
+                        mob.y,
+                        mob.z
+                    ) <= origin_radius
+            end
+
+            if string.lower(mob.name)
+                == string.lower(target_name)
+                and in_origin
+                and (
+                    not targeting.only_unclaimed
+                    or mob.claim_id == 0
+                )
+            then
+                candidates[#candidates + 1] = {
+                    key = key,
+                    mob = mob,
+                    dist = math.sqrt(
+                        mob.distance
+                    ),
+                }
+            end
         end
     end
 
@@ -1059,35 +1349,24 @@ function Find_Named_Target(target_name)
         end
     )
 
-    for _, entry in ipairs(candidates) do
-        local mob = entry.mob
-        local in_range = true
-
-        if origin_x and mob.x then
-            in_range =
-                Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
-        end
-
-        if string.lower(mob.name or '')
-                == string.lower(target_name or '')
-            and mob.valid_target
-            and mob.hpp
-            and mob.hpp > 0
-            and in_range
-            and mob.claim_id == 0
-        then
-            return entry.key
-        end
+    if candidates[1] then
+        return candidates[1].key
     end
 
     return -1
 end
 
 function Is_Targetable_Monster(name)
-    if not name then return false end
+    if not name then
+        return false
+    end
 
-    for _, monster in ipairs(targeting.monsters or {}) do
-        if string.lower(name) == string.lower(monster) then
+    for _, monster in ipairs(
+        targeting.monsters or {}
+    ) do
+        if string.lower(name)
+            == string.lower(monster)
+        then
             return true
         end
     end
@@ -1096,54 +1375,649 @@ function Is_Targetable_Monster(name)
 end
 
 function Find_Nearest_Target()
-    local mob_array = windower.ffxi.get_mob_array()
-    local candidates = {}
+    local mob_array =
+        windower.ffxi.get_mob_array()
+
+    local best_id = -1
+    local best_distance = nil
 
     for key, mob in pairs(mob_array) do
-        if mob.distance then
-            candidates[#candidates + 1] = {
-                key = key,
-                mob = mob,
-                dist = math.sqrt(mob.distance),
-            }
+        if mob
+            and mob.distance
+            and mob.valid_target
+            and mob.hpp
+            and mob.hpp > 0
+            and mob.name
+            and mob.name ~= ''
+        then
+            local in_origin = true
+
+            if targeting.within_origin
+                and origin_x
+                and mob.x
+            then
+                in_origin =
+                    Origin_Distance(
+                        mob.x,
+                        mob.y,
+                        mob.z
+                    ) <= origin_radius
+            end
+
+            local unclaimed = true
+
+            if targeting.only_unclaimed then
+                unclaimed =
+                    mob.claim_id == 0
+            end
+
+            if Is_Targetable_Monster(mob.name)
+                and in_origin
+                and unclaimed
+            then
+                local distance =
+                    math.sqrt(mob.distance)
+
+                if not best_distance
+                    or distance < best_distance
+                then
+                    best_id = key
+                    best_distance = distance
+                end
+            end
         end
     end
 
-    table.sort(
-        candidates,
-        function(a, b)
-            return a.dist < b.dist
+    return best_id
+end
+
+------------------------------------------------------------
+-- PARTY LEADER
+------------------------------------------------------------
+
+function Get_Party_Leader_ID()
+    local party =
+        windower.ffxi.get_party()
+
+    if not party then
+        return nil
+    end
+
+    if party.party1_leader
+        and party.party1_leader ~= 0
+    then
+        return party.party1_leader
+    end
+
+    return nil
+end
+
+function Get_Party_Leader()
+    local leader_id =
+        Get_Party_Leader_ID()
+
+    if leader_id then
+        return windower.ffxi.get_mob_by_id(
+            leader_id
+        )
+    end
+
+    -- No party leader means we're solo.
+    local player =
+        windower.ffxi.get_player()
+
+    if not player then
+        return nil
+    end
+
+    local party =
+        windower.ffxi.get_party()
+
+    local count = 0
+
+    for i = 0, 5 do
+        local member =
+            party and party['p' .. i]
+
+        if member and member.name then
+            count = count + 1
         end
+    end
+
+    if count <= 1 then
+        return windower.ffxi.get_mob_by_id(
+            player.id
+        )
+    end
+
+    return nil
+end
+
+function Is_Party_Leader()
+    local player =
+        windower.ffxi.get_player()
+
+    if not player then
+        return false
+    end
+
+    local leader_id =
+        Get_Party_Leader_ID()
+
+    -- Solo = leader.
+    if not leader_id then
+        local party =
+            windower.ffxi.get_party()
+
+        local count = 0
+
+        for i = 0, 5 do
+            local member =
+                party and party['p' .. i]
+
+            if member and member.name then
+                count = count + 1
+            end
+        end
+
+        return count <= 1
+    end
+
+    return leader_id == player.id
+end
+
+------------------------------------------------------------
+-- LEADER TARGET
+------------------------------------------------------------
+
+function Get_Leader_Target()
+    local leader =
+        Get_Party_Leader()
+
+    if not leader then
+        return nil
+    end
+
+    local player =
+        windower.ffxi.get_player()
+
+    -- We are the leader.
+    if player
+        and leader.id == player.id
+    then
+        local target =
+            windower.ffxi.get_mob_by_target('t')
+
+        if target
+            and target.valid_target
+            and target.hpp
+            and target.hpp > 0
+            and target.is_npc
+        then
+            return target
+        end
+
+        return nil
+    end
+
+    -- Follower: try leader's target index.
+    if leader.target_index
+        and leader.target_index > 0
+    then
+        local target =
+            windower.ffxi.get_mob_by_index(
+                leader.target_index
+            )
+
+        if target
+            and target.valid_target
+            and target.hpp
+            and target.hpp > 0
+            and target.is_npc
+        then
+            return target
+        end
+    end
+
+    -- Fallback to battle target.
+    local bt =
+        windower.ffxi.get_mob_by_target('bt')
+
+    if bt
+        and bt.valid_target
+        and bt.hpp
+        and bt.hpp > 0
+        and bt.is_npc
+    then
+        return bt
+    end
+
+    return nil
+end
+
+function Is_Leader_Engaged()
+    local leader =
+        Get_Party_Leader()
+
+    if not leader then
+        return false
+    end
+
+    return leader.status == 1
+end
+
+------------------------------------------------------------
+-- TARGET MONITOR
+------------------------------------------------------------
+
+function Target_Monitor()
+    while Start_Engine do
+        local player =
+            windower.ffxi.get_player()
+
+        if player
+            and player.status ~= 1
+            and Is_Party_Leader()
+            and not mp_resting
+        then
+            local target =
+                windower.ffxi.get_mob_by_target('t')
+
+            if target
+                and target.valid_target
+                and target.hpp
+                and target.hpp > 0
+            then
+                local valid = true
+
+                if settings.target
+                    and settings.target ~= ''
+                then
+                    if string.lower(
+                        target.name or ''
+                    ) ~= string.lower(
+                        settings.target
+                    )
+                    then
+                        valid = false
+                    end
+                end
+
+                if valid
+                    and targeting.within_origin
+                    and origin_x
+                    and target.x
+                then
+                    if Origin_Distance(
+                        target.x,
+                        target.y,
+                        target.z
+                    ) > origin_radius
+                    then
+                        valid = false
+                    end
+                end
+
+                if valid
+                    and targeting.only_unclaimed
+                    and target.claim_id ~= 0
+                then
+                    valid = false
+                end
+
+                if not valid then
+                    windower.send_command(
+                        'input /target <me>'
+                    )
+                end
+            end
+        end
+
+        coroutine.sleep(0.5)
+    end
+end
+
+------------------------------------------------------------
+-- TARGETING
+------------------------------------------------------------
+
+function Targeting()
+    while Start_Engine do
+        local player =
+            windower.ffxi.get_player()
+
+        if player
+            and player.status ~= 1
+            and not mp_resting
+        then
+            local is_leader =
+                Is_Party_Leader()
+
+            ------------------------------------------------
+            -- ASSIST MODE
+            ------------------------------------------------
+
+            if settings.assist
+                and settings.assist ~= ''
+                and not is_leader
+            then
+                windower.send_command(
+                    'input /assist '
+                    .. settings.assist
+                )
+
+                local target =
+                    windower.ffxi.get_mob_by_target(
+                        't'
+                    )
+
+                if target
+                    and target.valid_target
+                    and target.hpp
+                    and target.hpp > 0
+                then
+                    if active_profile
+                        and active_profile.auto_engage == false
+                    then
+                        windower.send_command(
+                            'input /attack off'
+                        )
+
+                    elseif Is_Leader_Engaged() then
+                        local distance =
+                            target.distance
+                            and math.sqrt(
+                                target.distance
+                            )
+
+                        if distance
+                            and distance <= 3
+                        then
+                            windower.ffxi.follow(0)
+
+                            windower.send_command(
+                                'input /attack on'
+                            )
+
+                            if not lockon_done then
+                                windower.send_command(
+                                    'input /lockon'
+                                )
+
+                                lockon_done = true
+                            end
+                        end
+                    end
+                end
+
+            ------------------------------------------------
+            -- PARTY LEADER / SOLO
+            ------------------------------------------------
+
+            elseif is_leader then
+
+                if settings.autotarget then
+                    local target_id = -1
+
+                    if settings.target
+                        and settings.target ~= ''
+                    then
+                        target_id =
+                            Find_Named_Target(
+                                settings.target
+                            )
+                    else
+                        target_id =
+                            Find_Nearest_Target()
+                    end
+
+                    if target_id > 0 then
+                        pathing_to_origin = false
+                        path_tick = 0
+
+                        local mob =
+                            windower.ffxi.get_mob_by_index(
+                                target_id
+                            )
+
+                        if mob
+                            and mob.valid_target
+                            and mob.hpp
+                            and mob.hpp > 0
+                        then
+                            local in_range = true
+
+                            if origin_x
+                                and mob.x
+                            then
+                                in_range =
+                                    Origin_Distance(
+                                        mob.x,
+                                        mob.y,
+                                        mob.z
+                                    ) <= origin_radius
+                            end
+
+                            if in_range then
+                                local distance =
+                                    mob.distance
+                                    and math.sqrt(
+                                        mob.distance
+                                    )
+
+                                if distance
+                                    and distance <= 3
+                                then
+                                    windower.ffxi.follow(0)
+
+                                    local current =
+                                        windower.ffxi.get_mob_by_target(
+                                            't'
+                                        )
+
+                                    if not current
+                                        or current.id ~= mob.id
+                                    then
+                                        windower.send_command(
+                                            'input /target "'
+                                            .. mob.name
+                                            .. '"'
+                                        )
+                                    end
+
+                                    if active_profile
+                                        and active_profile.auto_engage ~= false
+                                    then
+                                        windower.send_command(
+                                            'input /attack on'
+                                        )
+
+                                        if not lockon_done then
+                                            windower.send_command(
+                                                'input /lockon'
+                                            )
+
+                                            lockon_done = true
+                                        end
+                                    else
+                                        windower.send_command(
+                                            'input /attack off'
+                                        )
+                                    end
+
+                                else
+                                    windower.ffxi.follow(
+                                        target_id
+                                    )
+                                end
+
+                            else
+                                Path_To_Origin()
+                            end
+                        end
+
+                    else
+                        Path_To_Origin()
+                    end
+                end
+
+            ------------------------------------------------
+            -- PARTY FOLLOWER
+            ------------------------------------------------
+
+            else
+                local leader_target =
+                    Get_Leader_Target()
+
+                if leader_target then
+                    local current =
+                        windower.ffxi.get_mob_by_target(
+                            't'
+                        )
+
+                    if not current
+                        or current.id ~= leader_target.id
+                    then
+                        windower.send_command(
+                            'input /target "'
+                            .. leader_target.name
+                            .. '"'
+                        )
+                    end
+
+                    -- BACKLINE:
+                    -- target the leader's target,
+                    -- but never attack it.
+                    if active_profile
+                        and active_profile.auto_engage == false
+                    then
+                        windower.send_command(
+                            'input /attack off'
+                        )
+
+                    -- MELEE FOLLOWER:
+                    -- engage only when leader is engaged.
+                    elseif Is_Leader_Engaged() then
+                        local distance =
+                            leader_target.distance
+                            and math.sqrt(
+                                leader_target.distance
+                            )
+
+                        if distance
+                            and distance <= 3
+                        then
+                            windower.ffxi.follow(0)
+
+                            windower.send_command(
+                                'input /attack on'
+                            )
+
+                            if not lockon_done then
+                                windower.send_command(
+                                    'input /lockon'
+                                )
+
+                                lockon_done = true
+                            end
+                        else
+                            local leader =
+                                Get_Party_Leader()
+
+                            if leader
+                                and leader.index
+                            then
+                                windower.ffxi.follow(
+                                    leader.index
+                                )
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        coroutine.sleep(0.5)
+    end
+end
+
+------------------------------------------------------------
+-- FOLLOW MONITOR
+------------------------------------------------------------
+
+function Follow_Monitor()
+    while Start_Engine do
+
+        if mp_resting then
+            windower.ffxi.follow(0)
+
+        else
+            local player =
+                windower.ffxi.get_player()
+
+            if player then
+                if Is_Party_Leader() then
+                    -- Leader never follows the monster
+                    -- or another party member.
+                    windower.ffxi.follow(0)
+
+                elseif isCasting
+                    or isBusy > 0
+                then
+                    windower.ffxi.follow(0)
+
+                else
+                    local leader =
+                        Get_Party_Leader()
+
+                    if leader
+                        and leader.index
+                    then
+                        windower.ffxi.follow(
+                            leader.index
+                        )
+                    else
+                        windower.ffxi.follow(0)
+                    end
+                end
+            end
+        end
+
+        coroutine.sleep(0.2)
+    end
+end
+
+------------------------------------------------------------
+-- DIRECT TARGET SET
+------------------------------------------------------------
+
+function setTarget(target, unlock)
+    local player =
+        windower.ffxi.get_player()
+
+    if not player
+        or not target
+    then
+        return false
+    end
+
+    packets.inject(
+        packets.new('incoming', 0x058, {
+            ['Player'] = player.id,
+            ['Target'] = target.id,
+            ['Player Index'] = player.index,
+        })
     )
 
-    for _, entry in ipairs(candidates) do
-        local mob = entry.mob
-
-        local valid =
-            Is_Targetable_Monster(mob.name)
-            and mob.valid_target
-            and (
-                not targeting.only_alive
-                or (mob.hpp and mob.hpp > 0)
-            )
-            and (
-                not targeting.within_origin
-                or not origin_x
-                or not mob.x
-                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
-            )
-            and (
-                not targeting.only_unclaimed
-                or mob.claim_id == 0
-            )
-
-        if valid then
-            return entry.key
-        end
+    if unlock then
+        windower.send_command(
+            'wait 1; input /lockon'
+        )
     end
 
-    return -1
+    return true
 end
+
 ------------------------------------------------------------
 -- SPELL / ABILITY HELPERS
 ------------------------------------------------------------
@@ -1151,21 +2025,28 @@ end
 function Is_Blacklisted(name)
     if not name then return false end
 
-    for _, blocked in ipairs(spell_blacklist or {}) do
-        if string.lower(name) == string.lower(blocked) then
+    for _, blocked in ipairs(
+        spell_blacklist or {}
+    ) do
+        if string.lower(name)
+            == string.lower(blocked)
+        then
             return true
         end
     end
 
     return false
 end
-
 
 function Is_Haste_Blacklisted(name)
     if not name then return false end
 
-    for _, blocked in ipairs(haste_blacklist or {}) do
-        if string.lower(name) == string.lower(blocked) then
+    for _, blocked in ipairs(
+        haste_blacklist or {}
+    ) do
+        if string.lower(name)
+            == string.lower(blocked)
+        then
             return true
         end
     end
@@ -1173,14 +2054,18 @@ function Is_Haste_Blacklisted(name)
     return false
 end
 
-
 function Can_Cast_Spell(spell_name)
-    if not spell_name or spell_name == '' then
+    if not spell_name
+        or spell_name == ''
+    then
         return false
     end
 
     local spell =
-        res.spells:with('name', spell_name)
+        res.spells:with(
+            'name',
+            spell_name
+        )
 
     if not spell then return false end
 
@@ -1199,10 +2084,12 @@ function Can_Cast_Spell(spell_name)
         and not Is_Moving()
 end
 
-
 function Can_Cast_Ability(ability_name)
     local ability =
-        res.job_abilities:with('name', ability_name)
+        res.job_abilities:with(
+            'name',
+            ability_name
+        )
 
     if not ability then return false end
 
@@ -1214,10 +2101,12 @@ function Can_Cast_Ability(ability_name)
         and isBusy == 0
 end
 
-
 function Cast_Spell(spell_name)
     local spell =
-        res.spells:with('name', spell_name)
+        res.spells:with(
+            'name',
+            spell_name
+        )
 
     if not spell then return false end
 
@@ -1236,7 +2125,9 @@ function Cast_Spell(spell_name)
     end
 
     windower.send_command(
-        'input /ma "' .. spell_name .. '" <t>'
+        'input /ma "'
+        .. spell_name
+        .. '" <t>'
     )
 
     isBusy = Action_Delay
@@ -1244,10 +2135,12 @@ function Cast_Spell(spell_name)
     return true
 end
 
-
 function Cast_Spell_On(spell_name, target)
     local spell =
-        res.spells:with('name', spell_name)
+        res.spells:with(
+            'name',
+            spell_name
+        )
 
     if not spell then return false end
 
@@ -1276,7 +2169,10 @@ function Cast_Spell_On(spell_name, target)
     end
 
     windower.send_command(
-        'input /ma "' .. spell_name .. '" ' .. target
+        'input /ma "'
+        .. spell_name
+        .. '" '
+        .. target
     )
 
     isBusy = Action_Delay
@@ -1284,17 +2180,96 @@ function Cast_Spell_On(spell_name, target)
     return true
 end
 
-
 function Cast_Ability(ability_name)
     if mp_resting then
         Stop_MP_Rest()
     end
 
     windower.send_command(
-        'input /ja "' .. ability_name .. '" <me>'
+        'input /ja "'
+        .. ability_name
+        .. '" <me>'
     )
 
     isBusy = Action_Delay
+end
+
+------------------------------------------------------------
+-- ENGINE
+------------------------------------------------------------
+
+function Engine()
+    while Start_Engine do
+
+        Update_Job_Profile()
+
+        ----------------------------------------------------
+        -- ACTION TIMER
+        ----------------------------------------------------
+
+        if isBusy > 0 then
+            isBusy = isBusy - 0.1
+
+            if isBusy < 0 then
+                isBusy = 0
+            end
+        end
+
+        ----------------------------------------------------
+        -- MP REST
+        ----------------------------------------------------
+
+        MP_Rest_Tick()
+
+        ----------------------------------------------------
+        -- BACKLINE SAFETY
+        ----------------------------------------------------
+
+        Enforce_Backline_Rules()
+
+        ----------------------------------------------------
+        -- RESET LOCKON WHEN DISENGAGED
+        ----------------------------------------------------
+
+        local player =
+            windower.ffxi.get_player()
+
+        if player then
+            if player.status ~= 1 then
+                lockon_done = false
+
+                if engaged_since then
+                    engaged_since = nil
+                end
+            elseif not engaged_since then
+                engaged_since = os.clock()
+            end
+        end
+
+        ----------------------------------------------------
+        -- DON'T LET MOVEMENT FIGHT RESTING
+        ----------------------------------------------------
+
+        if mp_resting then
+            windower.ffxi.follow(0)
+            windower.ffxi.run(false)
+        end
+
+        coroutine.sleep(0.1)
+    end
+end
+
+------------------------------------------------------------
+-- SKILLCHAIN MONITOR
+------------------------------------------------------------
+
+function SC_Monitor()
+    while Start_Engine do
+        -- Skillchain/magic-burst modules may maintain their
+        -- own state. This monitor deliberately stays passive
+        -- unless those modules expose their own tick function.
+        coroutine.sleep(0.5)
+    end
 end
 
 ------------------------------------------------------------
@@ -1309,7 +2284,8 @@ function Buff_Tick()
     end
 
     if pending_cast
-        and os.clock() - pending_cast.sent_at > 10
+        and os.clock()
+            - pending_cast.sent_at > 10
     then
         pending_cast = nil
     end
@@ -1366,7 +2342,9 @@ function Buff_Tick()
 
                 local pet_ok = true
 
-                if debuff.require_no_pet and pet then
+                if debuff.require_no_pet
+                    and pet
+                then
                     pet_ok = false
                 end
 
@@ -1389,7 +2367,8 @@ function Buff_Tick()
                     end
 
                     local spell_target =
-                        debuff.target or '<t>'
+                        debuff.target
+                        or '<t>'
 
                     for _, name in ipairs(names) do
                         local spell =
@@ -1417,7 +2396,9 @@ function Buff_Tick()
 
                                 coroutine.schedule(
                                     function()
-                                        coroutine.sleep(2.5)
+                                        coroutine.sleep(
+                                            2.5
+                                        )
 
                                         if Can_Cast_Ability(
                                             follow_up
@@ -1475,7 +2456,9 @@ function Buff_Tick()
         local buff_ok = true
 
         if buff.require_buff
-            and not buffactive[buff.require_buff]
+            and not buffactive[
+                buff.require_buff
+            ]
         then
             buff_ok = false
         end
@@ -1521,7 +2504,9 @@ function Buff_Tick()
     for _, ab in ipairs(
         active_profile.self_abilities or {}
     ) do
-        self_ability_list[#self_ability_list + 1] = ab
+        self_ability_list[
+            #self_ability_list + 1
+        ] = ab
     end
 
     do
@@ -1535,12 +2520,16 @@ function Buff_Tick()
             for _, ab in ipairs(
                 subjob_abilities[sub]
             ) do
-                self_ability_list[#self_ability_list + 1] = ab
+                self_ability_list[
+                    #self_ability_list + 1
+                ] = ab
             end
         end
     end
 
-    for _, ab in ipairs(self_ability_list) do
+    for _, ab in ipairs(
+        self_ability_list
+    ) do
         local interval =
             (ab.interval or 20) * 60
 
@@ -1556,9 +2545,13 @@ function Buff_Tick()
             local mp_ok = true
 
             local pet =
-                windower.ffxi.get_mob_by_target('pet')
+                windower.ffxi.get_mob_by_target(
+                    'pet'
+                )
 
-            if ab.require_pet and not pet then
+            if ab.require_pet
+                and not pet
+            then
                 pet_ok = false
 
             elseif ab.max_pet_hpp
@@ -1580,7 +2573,9 @@ function Buff_Tick()
                 and player.vitals
                 and player.vitals.mpp
             then
-                if player.vitals.mpp > ab.max_mp_percent then
+                if player.vitals.mpp
+                    > ab.max_mp_percent
+                then
                     mp_ok = false
                 end
             end
@@ -1591,7 +2586,9 @@ function Buff_Tick()
             then
                 Cast_Ability(ab.name)
 
-                self_ability_last_cast[ab.name] = now
+                self_ability_last_cast[
+                    ab.name
+                ] = now
 
                 return
             end
@@ -1630,7 +2627,9 @@ function Buff_Tick()
                     for _, job in ipairs(
                         eb.targets.jobs
                     ) do
-                        if chosen_target then break end
+                        if chosen_target then
+                            break
+                        end
 
                         for _, key in ipairs({
                             'p0',
@@ -1655,7 +2654,9 @@ function Buff_Tick()
                                     m.mob.distance
                                 ) <= 20
                             then
-                                chosen_target = m.name
+                                chosen_target =
+                                    m.name
+
                                 break
                             end
                         end
@@ -1665,7 +2666,8 @@ function Buff_Tick()
                 if chosen_target then
                     if Can_Cast_Ability(
                         eb.ability or 'Entrust'
-                    ) then
+                    )
+                    then
                         Cast_Ability(
                             eb.ability or 'Entrust'
                         )
@@ -1714,10 +2716,13 @@ function Buff_Tick()
             active_profile.party_buffs
         ) do
             local spell_name = pb.spell
+
             local interval =
                 (pb.interval or 6) * 60
 
-            local range = pb.range or 20
+            local range =
+                pb.range or 20
+
             local targets = {}
 
             if pb.targets == 'ALL_PLAYERS' then
@@ -1738,14 +2743,21 @@ function Buff_Tick()
                             and m.mob.id
                             and m.zone == me_zone
                             and not m.mob.is_npc
-                            and (pb.self or key ~= 'p0')
-                            and not Is_Haste_Blacklisted(m.name)
+                            and (
+                                pb.self
+                                or key ~= 'p0'
+                            )
+                            and not Is_Haste_Blacklisted(
+                                m.name
+                            )
                             and m.mob.distance
                             and math.sqrt(
                                 m.mob.distance
                             ) <= range
                         then
-                            targets[#targets + 1] = m.name
+                            targets[
+                                #targets + 1
+                            ] = m.name
                         end
                     end
                 end
@@ -1770,7 +2782,10 @@ function Buff_Tick()
                             and m.mob.id
                             and m.zone == me_zone
                             and not m.mob.is_npc
-                            and (pb.self or key ~= 'p0')
+                            and (
+                                pb.self
+                                or key ~= 'p0'
+                            )
                             and m.mob.distance
                             and math.sqrt(
                                 m.mob.distance
@@ -1780,8 +2795,10 @@ function Buff_Tick()
                                 pb.targets.jobs
                             ) do
                                 if m.main_job == job then
-                                    targets[#targets + 1] =
-                                        m.name
+                                    targets[
+                                        #targets + 1
+                                    ] = m.name
+
                                     break
                                 end
                             end
@@ -1792,10 +2809,14 @@ function Buff_Tick()
 
             for _, tname in ipairs(targets) do
                 local cache_key =
-                    spell_name .. ':' .. tname
+                    spell_name
+                    .. ':'
+                    .. tname
 
                 local last =
-                    party_buff_last_cast[cache_key]
+                    party_buff_last_cast[
+                        cache_key
+                    ]
 
                 if not last
                     or now - last >= interval
@@ -1825,7 +2846,8 @@ function Buff_Tick()
             end
         end
     end
-        --------------------------------------------------------
+
+    --------------------------------------------------------
     -- 7. HASTE HANDLING
     --------------------------------------------------------
 
@@ -1833,13 +2855,17 @@ function Buff_Tick()
         and not active_profile.party_buffs
     then
         local self_interval =
-            (active_profile.haste_self_interval or 20) * 60
+            (
+                active_profile.haste_self_interval
+                or 20
+            ) * 60
 
         local self_last =
             haste_last_cast.me
 
         local haste_spell =
-            active_profile.haste_spell or 'Haste II'
+            active_profile.haste_spell
+            or 'Haste II'
 
         if not self_last
             or now - self_last >= self_interval
@@ -1868,7 +2894,10 @@ function Buff_Tick()
         end
 
         local party_interval =
-            (active_profile.haste_party_interval or 6) * 60
+            (
+                active_profile.haste_party_interval
+                or 6
+            ) * 60
 
         local haste_targets =
             active_profile.haste_targets
@@ -1900,14 +2929,17 @@ function Buff_Tick()
                         and key ~= 'p0'
                         and m.zone == me_zone
                         and not m.mob.is_npc
-                        and not Is_Haste_Blacklisted(m.name)
+                        and not Is_Haste_Blacklisted(
+                            m.name
+                        )
                         and m.mob.distance
                         and math.sqrt(
                             m.mob.distance
                         ) <= 20
                     then
-                        haste_targets[#haste_targets + 1] =
-                            m.name
+                        haste_targets[
+                            #haste_targets + 1
+                        ] = m.name
                     end
                 end
             end
@@ -2004,10 +3036,13 @@ function Buff_Tick()
 
                     if allowed then
                         local cache_key =
-                            'refresh:' .. m.name
+                            'refresh:'
+                            .. m.name
 
                         local last =
-                            refresh_last_cast[cache_key]
+                            refresh_last_cast[
+                                cache_key
+                            ]
 
                         if not last
                             or now - last >= interval
@@ -2040,7 +3075,6 @@ function Buff_Tick()
         end
     end
 end
-
 
 function Buff_Monitor()
     while Start_Engine do
@@ -2087,7 +3121,6 @@ function Party_Has_WHM()
     return false
 end
 
-
 function Cure_Bot_Tick()
     if not settings.cure_active
         or not active_profile
@@ -2103,7 +3136,8 @@ function Cure_Bot_Tick()
     if current_job == 'SCH'
         and active_profile.cure_bot_if_no_whm
     then
-        cure_active = not Party_Has_WHM()
+        cure_active =
+            not Party_Has_WHM()
     end
 
     if cure_active
@@ -2129,7 +3163,8 @@ function Cure_Bot_Tick()
     if not cure_active then return end
 
     if pending_cast
-        and os.clock() - pending_cast.sent_at > 10
+        and os.clock()
+            - pending_cast.sent_at > 10
     then
         pending_cast = nil
     end
@@ -2151,7 +3186,8 @@ function Cure_Bot_Tick()
 
     if not party then return end
 
-    local worst_member, worst_hpp = nil, 999
+    local worst_member
+    local worst_hpp = 999
 
     for _, key in ipairs({
         'p0',
@@ -2198,10 +3234,13 @@ function Cure_Bot_Tick()
     if not target_name then return end
 
     local max_hp =
-        worst_member.hp / (worst_hpp / 100)
+        worst_member.hp
+        / (worst_hpp / 100)
 
     local missing_hp =
-        math.floor(max_hp - worst_member.hp)
+        math.floor(
+            max_hp - worst_member.hp
+        )
 
     if missing_hp <= 0 then return end
 
@@ -2249,7 +3288,6 @@ function Cure_Bot_Tick()
     end
 end
 
-
 function Cure_Monitor()
     while Start_Engine do
         pcall(Cure_Bot_Tick)
@@ -2263,7 +3301,6 @@ end
 
 local tracked_trusts      = {}
 local trust_resummon_last = {}
-
 
 function Snapshot_Trusts()
     tracked_trusts = {}
@@ -2288,8 +3325,9 @@ function Snapshot_Trusts()
             and m.mob
             and m.mob.is_npc
         then
-            tracked_trusts[#tracked_trusts + 1] =
-                m.name
+            tracked_trusts[
+                #tracked_trusts + 1
+            ] = m.name
         end
     end
 
@@ -2305,12 +3343,14 @@ function Snapshot_Trusts()
     end
 end
 
-
 function Trust_Tick()
-    if #tracked_trusts == 0 then return end
+    if #tracked_trusts == 0 then
+        return
+    end
 
     if pending_cast
-        and os.clock() - pending_cast.sent_at > 10
+        and os.clock()
+            - pending_cast.sent_at > 10
     then
         pending_cast = nil
     end
@@ -2348,7 +3388,9 @@ function Trust_Tick()
         end
     end
 
-    for _, name in ipairs(tracked_trusts) do
+    for _, name in ipairs(
+        tracked_trusts
+    ) do
         if not present[name] then
             local spell =
                 res.spells:with(
@@ -2371,7 +3413,8 @@ function Trust_Tick()
 
                 windower.add_to_chat(
                     2,
-                    '[Lazy] Resummoning trust: ' .. name
+                    '[Lazy] Resummoning trust: '
+                    .. name
                 )
 
                 return
@@ -2380,13 +3423,13 @@ function Trust_Tick()
     end
 end
 
-
 function Trust_Monitor()
     while Start_Engine do
         pcall(Trust_Tick)
         coroutine.sleep(1)
     end
 end
+
 ------------------------------------------------------------
 -- BUFF LIST CONVERTER
 ------------------------------------------------------------
@@ -2394,17 +3437,26 @@ end
 function convert_buff_list(bufflist)
     local buffs = {}
 
-    for _, buff_id in pairs(bufflist or {}) do
-        local buff = res.buffs[buff_id]
+    for _, buff_id in pairs(
+        bufflist or {}
+    ) do
+        local buff =
+            res.buffs[buff_id]
 
         if buff then
             if buff.english then
                 buffs[buff.english] =
-                    (buffs[buff.english] or 0) + 1
+                    (
+                        buffs[buff.english]
+                        or 0
+                    ) + 1
             end
 
             buffs[buff_id] =
-                (buffs[buff_id] or 0) + 1
+                (
+                    buffs[buff_id]
+                    or 0
+                ) + 1
         end
     end
 
