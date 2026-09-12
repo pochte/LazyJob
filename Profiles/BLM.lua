@@ -102,7 +102,7 @@ JOB_PROFILES.BLM = {
     -- of waiting for a skillchain / magic burst window.
     --------------------------------------------------------
 
-    solo_mode = true,
+    solo_mode = false,
 
     solo_spells = {
         'Fire VI',
@@ -117,7 +117,7 @@ JOB_PROFILES.BLM = {
     -- CURE BOT
     --------------------------------------------------------
 
-    cure_bot_active = true,
+    cure_bot_active = false,
 
     cure_tiers = {
         {
