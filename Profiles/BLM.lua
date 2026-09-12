@@ -9,91 +9,45 @@
 
 JOB_PROFILES.BLM = {
 
-	--------------------------------------------------------
-	-- MELEE / ENGAGE SETTINGS
-	--------------------------------------------------------
+    --------------------------------------------------------
+    -- MELEE / ENGAGE SETTINGS
+    --------------------------------------------------------
 
-	auto_engage = false,
-	use_weaponskills = false,
+    auto_engage = false,
+    use_weaponskills = false,
 
-	--------------------------------------------------------
-	-- SUPPORT / BUFFS
-	--------------------------------------------------------
+    --------------------------------------------------------
+    -- SUPPORT / BUFFS
+    --------------------------------------------------------
 
-	haste_active = false,
-	self_buffs = {},
+    haste_active = false,
+    self_buffs = {},
 
-	--------------------------------------------------------
-	-- MAGIC BURST
-	--------------------------------------------------------
+    --------------------------------------------------------
+    -- MAGIC BURST
+    --------------------------------------------------------
 
-	magic_burst = true,
+    magic_burst = true,
 
-	burst_spells = {
+    burst_spells = {
+        Fire     = { 'Fire VI', 'Fire V', 'Fire IV' },
+        Blizzard = { 'Blizzard VI', 'Blizzard V', 'Blizzard IV' },
+        Aero     = { 'Aero VI', 'Aero V', 'Aero IV' },
+        Stone    = { 'Stone VI', 'Stone V', 'Stone IV' },
+        Thunder  = { 'Thunder VI', 'Thunder V', 'Thunder IV' },
+        Water    = { 'Water VI', 'Water V', 'Water IV' },
+        Darkness = { 'Comet', 'Impact' },
+    },
 
-		Fire = {
-			'Fire VI',
-			'Fire V',
-			'Fire IV',
-		},
+    --------------------------------------------------------
+    -- CURE BOT
+    --------------------------------------------------------
 
-		Blizzard = {
-			'Blizzard VI',
-			'Blizzard V',
-			'Blizzard IV',
-		},
+    cure_bot_active = true,
 
-		Aero = {
-			'Aero VI',
-			'Aero V',
-			'Aero IV',
-		},
-
-		Stone = {
-			'Stone VI',
-			'Stone V',
-			'Stone IV',
-		},
-
-		Thunder = {
-			'Thunder VI',
-			'Thunder V',
-			'Thunder IV',
-		},
-
-		Water = {
-			'Water VI',
-			'Water V',
-			'Water IV',
-		},
-
-		Darkness = {
-			'Comet',
-			'Impact',
-		},
-	},
-
-	--------------------------------------------------------
-	-- CURE BOT
-	--------------------------------------------------------
-
-	cure_bot_active = true,
-
-	cure_tiers = {
-		{
-			min_missing = 100,
-			max_missing = 350,
-			spells = { 'Cure II', 'Cure' },
-		},
-		{
-			min_missing = 351,
-			max_missing = 800,
-			spells = { 'Cure III', 'Cure II' },
-		},
-		{
-			min_missing = 801,
-			max_missing = 999999,
-			spells = { 'Cure IV', 'Cure III' },
-		},
-	},
+    cure_tiers = {
+        {min_missing = 100,max_missing = 350,spells = {'Cure II','Cure'}},
+        {min_missing = 351,max_missing = 800,spells = {'Cure III','Cure II'}},
+        {min_missing = 801,max_missing = 999999,spells = {'Cure IV','Cure III'}},
+    },
 }

@@ -1141,7 +1141,12 @@ function Combat()
         TurnToTarget()
     end
 
-    if active_profile and active_profile.magic_burst then
+    local magic_burst_ok = active_profile and active_profile.magic_burst
+    if magic_burst_ok and active_profile.magic_burst_requires_buff then
+        magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff] and true or false
+    end
+
+    if magic_burst_ok then
         if Try_Magic_Burst and Try_Magic_Burst() then return end
         if current_job == 'BLM' or current_job == 'GEO'
             or current_job == 'SCH' or current_job == 'NIN' then
@@ -1322,7 +1327,13 @@ function Buff_Tick()
 
         if target and target.hpp and target.hpp > 0 and not Is_Blacklisted(target.name) then
             for _, debuff in ipairs(active_profile.debuffs) do
-                local last     = debuff_last_cast[debuff.name]
+                -- debuff.name may be a single spell name, or a list of
+                -- fallback names in priority order (e.g. tier II, then
+                -- tier I, for jobs that may not have the higher tier).
+                local names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
+                local key   = names[1]
+
+                local last     = debuff_last_cast[key]
                 local interval = (debuff.interval or 1) * 60
                 
                 local pet_ok = true
@@ -1338,27 +1349,30 @@ function Buff_Tick()
                     end
 
                     local spell_target = debuff.target or '<t>'
-                    local spell = res.spells:with('name', debuff.name)
-                    if spell and Cast_Spell_On(debuff.name, spell_target) then
-                        pending_cast = {
-                            store    = debuff_last_cast,
-                            key      = debuff.name,
-                            spell_id = spell.id,
-                            sent_at  = now,
-                        }
 
-                        -- Post-ability sequence (e.g., Ecliptic Attrition)
-                        if debuff.use_ability_after then
-                            local follow_up = debuff.use_ability_after
-                            coroutine.schedule(function()
-                                coroutine.sleep(2.5) -- Wait for spell finish animation
-                                if Can_Cast_Ability(follow_up) then
-                                    Cast_Ability(follow_up)
-                                end
-                            end, 0)
+                    for _, name in ipairs(names) do
+                        local spell = res.spells:with('name', name)
+                        if spell and Cast_Spell_On(name, spell_target) then
+                            pending_cast = {
+                                store    = debuff_last_cast,
+                                key      = key,
+                                spell_id = spell.id,
+                                sent_at  = now,
+                            }
+
+                            -- Post-ability sequence (e.g., Ecliptic Attrition)
+                            if debuff.use_ability_after then
+                                local follow_up = debuff.use_ability_after
+                                coroutine.schedule(function()
+                                    coroutine.sleep(2.5) -- Wait for spell finish animation
+                                    if Can_Cast_Ability(follow_up) then
+                                        Cast_Ability(follow_up)
+                                    end
+                                end, 0)
+                            end
+
+                            return
                         end
-
-                        return
                     end
                 end
             end
@@ -1375,18 +1389,34 @@ function Buff_Tick()
 
     -- 3. SELF BUFFS
     for _, buff in ipairs(active_profile.self_buffs or {}) do
+        -- buff.name may be a single spell name, or a list of fallback
+        -- names in priority order (e.g. Storm II, then Storm I, for
+        -- jobs that may not have the higher tier).
+        local names = type(buff.name) == 'table' and buff.name or {buff.name}
+        local key   = names[1]
+
         local interval = (buff.interval or 20) * 60
-        local last     = self_buff_last_cast[buff.name]
-        if not last or now - last >= interval then
-            local spell = res.spells:with('name', buff.name)
-            if spell and Cast_Spell_On(buff.name, '<me>') then
-                pending_cast = {
-                    store    = self_buff_last_cast,
-                    key      = buff.name,
-                    spell_id = spell.id,
-                    sent_at  = now,
-                }
-                return
+        local last     = self_buff_last_cast[key]
+
+        -- require_buff lets an entry only fire while a given player
+        -- buff is active (e.g. only keep Thunderstorm up in Dark Arts).
+        local buff_ok = true
+        if buff.require_buff and not buffactive[buff.require_buff] then
+            buff_ok = false
+        end
+
+        if buff_ok and (not last or now - last >= interval) then
+            for _, name in ipairs(names) do
+                local spell = res.spells:with('name', name)
+                if spell and Cast_Spell_On(name, '<me>') then
+                    pending_cast = {
+                        store    = self_buff_last_cast,
+                        key      = key,
+                        spell_id = spell.id,
+                        sent_at  = now,
+                    }
+                    return
+                end
             end
         end
     end
@@ -1696,6 +1726,10 @@ function Cure_Bot_Tick()
     local cure_active = active_profile.cure_bot_active
     if current_job == 'SCH' and active_profile.cure_bot_if_no_whm then
         cure_active = not Party_Has_WHM()
+    end
+
+    if cure_active and active_profile.cure_bot_requires_buff then
+        cure_active = buffactive[active_profile.cure_bot_requires_buff] and true or false
     end
 
     --------------------------------------------------------

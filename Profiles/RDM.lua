@@ -79,6 +79,22 @@ JOB_PROFILES.RDM = {
     },
 
     --------------------------------------------------------
+    -- MAGIC BURST
+    --------------------------------------------------------
+
+    magic_burst = true,
+
+    burst_spells = {
+        Fire     = { 'Fire V', 'Fire IV', 'Fire III' },
+        Blizzard = { 'Blizzard V', 'Blizzard IV', 'Blizzard III' },
+        Aero     = { 'Aero V', 'Aero IV', 'Aero III' },
+        Stone    = { 'Stone V', 'Stone IV', 'Stone III' },
+        Thunder  = { 'Thunder V', 'Thunder IV', 'Thunder III' },
+        Water    = { 'Water V', 'Water IV', 'Water III' },
+        Darkness = { 'Impact' },
+    },
+
+    --------------------------------------------------------
     -- FAILSAFE CURING
     --
     -- Not the intended healer -- normally a WHM trust/player is
@@ -93,28 +109,8 @@ JOB_PROFILES.RDM = {
     emergency_cure_threshold = 25,
 
     cure_tiers = {
-        {
-            max_missing = 250,
-            spells = {
-                'Cure II',
-                'Cure',
-            },
-        },
-
-        {
-            max_missing = 600,
-            spells = {
-                'Cure III',
-                'Cure II',
-            },
-        },
-
-        {
-            max_missing = math.huge,
-            spells = {
-                'Cure IV',
-                'Cure III',
-            },
-        },
+        {max_missing = 250,spells = {'Cure II','Cure'}},
+        {max_missing = 600,spells = {'Cure III','Cure II'}},
+        {max_missing = math.huge,spells = {'Cure IV','Cure III'}},
     },
 }

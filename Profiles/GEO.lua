@@ -21,28 +21,28 @@ JOB_PROFILES.GEO = {
 
     self_abilities = {
         -- Restores MP using Luopan when player MP drops below 50%
-        { 
-            name = 'Radial Arcana', 
-            interval = 1, 
-            require_pet = true, 
-            max_mp_percent = 50, 
-            min_pet_hpp = 20 
+        {
+            name = 'Radial Arcana',
+            interval = 1,
+            require_pet = true,
+            max_mp_percent = 50,
+            min_pet_hpp = 20,
         },
 
         -- Grants Luopan temporary invulnerability when HP drops below 30%
-        { 
-            name = 'Dematerialize', 
-            interval = 1, 
-            require_pet = true, 
-            max_pet_hpp = 30 
+        {
+            name = 'Dematerialize',
+            interval = 1,
+            require_pet = true,
+            max_pet_hpp = 30,
         },
 
         -- Restores Luopan HP when it drops below 40%
-        { 
-            name = 'Life Cycle', 
-            interval = 1, 
-            require_pet = true, 
-            max_pet_hpp = 40 
+        {
+            name = 'Life Cycle',
+            interval = 1,
+            require_pet = true,
+            max_pet_hpp = 40,
         },
     },
 
@@ -52,9 +52,9 @@ JOB_PROFILES.GEO = {
 
     entrust_buffs = {
         {
-            ability  = 'Entrust',
-            spell    = 'Indi-Refresh',
-            targets  = { jobs = { 'RDM', 'WHM', 'SCH' } },
+            ability = 'Entrust',
+            spell = 'Indi-Refresh',
+            targets = { jobs = { 'RDM', 'WHM', 'SCH' } },
             interval = 1,
         },
     },
@@ -64,13 +64,13 @@ JOB_PROFILES.GEO = {
     --------------------------------------------------------
 
     debuffs = {
-        { 
-            name = 'Geo-Frailty', 
+        {
+            name = 'Geo-Frailty',
             target = '<bt>',
             interval = 3,
-            require_no_pet = true,                 -- Avoids recasting if Luopan is currently active
-            use_ability_before = 'Blaze of Glory', -- Pops BoG before summoning Luopan
-            use_ability_after  = 'Ecliptic Attrition', -- Pops Ecliptic Attrition right after Luopan is summoned
+            require_no_pet = true,                    -- Avoids recasting if Luopan is currently active
+            use_ability_before = 'Blaze of Glory',     -- Pops BoG before summoning Luopan
+            use_ability_after = 'Ecliptic Attrition',  -- Pops Ecliptic Attrition right after Luopan is summoned
         },
     },
 
@@ -87,7 +87,7 @@ JOB_PROFILES.GEO = {
         Stone    = { 'Stone V', 'Stone IV', 'Stone III' },
         Thunder  = { 'Thunder V', 'Thunder IV', 'Thunder III' },
         Water    = { 'Water V', 'Water IV', 'Water III' },
-        Darkness = { 'Comet' },
+        Darkness = { 'Impact' },
     },
 
     --------------------------------------------------------
@@ -97,20 +97,8 @@ JOB_PROFILES.GEO = {
     cure_bot_active = true,
 
     cure_tiers = {
-        {
-            min_missing = 100,
-            max_missing = 350,
-            spells = { 'Cure II', 'Cure' },
-        },
-        {
-            min_missing = 351,
-            max_missing = 800,
-            spells = { 'Cure III', 'Cure II' },
-        },
-        {
-            min_missing = 801,
-            max_missing = 999999,
-            spells = { 'Cure IV', 'Cure III' },
-        },
+        {min_missing = 100,max_missing = 350,spells = {'Cure II','Cure'}},
+        {min_missing = 351,max_missing = 800,spells = {'Cure III','Cure II'}},
+        {min_missing = 801,max_missing = 999999,spells = {'Cure IV','Cure III'}},
     },
 }
