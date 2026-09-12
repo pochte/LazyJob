@@ -20,10 +20,10 @@ JOB_PROFILES.BLM = {
     -- SUPPORT / BUFFS
     --------------------------------------------------------
 
- self_buffs = {
+    self_buffs = {
         { name = {'Thunderstorm'}, interval = 3, require_buff = 'Dark Arts' },
-		name={'Klimaform'}, interval = 3},
-}
+        { name = {'Klimaform'}, interval = 3 },
+    },
 
     --------------------------------------------------------
     -- MAGIC BURST

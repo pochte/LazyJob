@@ -29,8 +29,8 @@ JOB_PROFILES.SCH = {
 
     self_buffs = {
         { name = {'Thunderstorm II', 'Thunderstorm'}, interval = 4, require_buff = 'Dark Arts' },
-        { name = 'Aurorastorm',                        interval = 4, require_buff = 'Light Arts' },
-		name={'Klimaform'}, interval = 3},
+        { name = 'Aurorastorm', interval = 4, require_buff = 'Light Arts' },
+        { name = {'Klimaform'}, interval = 3 },
     },
 
     --------------------------------------------------------
@@ -63,9 +63,9 @@ JOB_PROFILES.SCH = {
     cure_bot_requires_buff = 'Light Arts',
 
     cure_tiers = {
-        {max_missing = 250,spells = {'Cure II','Cure'}},
-        {max_missing = 600,spells = {'Cure III','Cure II'}},
-        {max_missing = 1100,spells = {'Cure IV','Cure III'}},
-        {max_missing = math.huge,spells = {'Cure IV','Cure III'}},
+        { max_missing = 250,  spells = { 'Cure II', 'Cure' } },
+        { max_missing = 600,  spells = { 'Cure III', 'Cure II' } },
+        { max_missing = 1100, spells = { 'Cure IV', 'Cure III' } },
+        { max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
     },
 }

@@ -26,11 +26,10 @@ JOB_PROFILES.RDM = {
     --------------------------------------------------------
 
     self_buffs = {
-       `
-        { name = 'Haste II',      interval = 23 },
-        { name = 'Temper II',     interval = 5  },
-        { name = 'Gain-STR',      interval = 15 },
-        { name = 'Enfire II',     interval = 20 },
+        { name = 'Haste II',  interval = 23 },
+        { name = 'Temper II', interval = 5 },
+        { name = 'Gain-STR',  interval = 15 },
+        { name = 'Enfire II', interval = 20 },
     },
 
     --------------------------------------------------------
@@ -109,8 +108,8 @@ JOB_PROFILES.RDM = {
     emergency_cure_threshold = 25,
 
     cure_tiers = {
-        {max_missing = 250,spells = {'Cure II','Cure'}},
-        {max_missing = 600,spells = {'Cure III','Cure II'}},
-        {max_missing = math.huge,spells = {'Cure IV','Cure III'}},
+        { max_missing = 250,  spells = { 'Cure II', 'Cure' } },
+        { max_missing = 600,  spells = { 'Cure III', 'Cure II' } },
+        { max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
     },
 }
