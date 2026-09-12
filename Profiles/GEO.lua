@@ -81,9 +81,9 @@ JOB_PROFILES.GEO = {
     magic_burst = true,
 
     burst_spells = {
+        Aero     = { 'Aero V', 'Aero IV', 'Aero III' },
         Fire     = { 'Fire V', 'Fire IV', 'Fire III' },
         Blizzard = { 'Blizzard V', 'Blizzard IV', 'Blizzard III' },
-        Aero     = { 'Aero V', 'Aero IV', 'Aero III' },
         Stone    = { 'Stone V', 'Stone IV', 'Stone III' },
         Thunder  = { 'Thunder V', 'Thunder IV', 'Thunder III' },
         Water    = { 'Water V', 'Water IV', 'Water III' },
