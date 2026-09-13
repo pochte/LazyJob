@@ -8,13 +8,29 @@ packets = require('packets')
 
 
 ------------------------------------------------------------
--- MODULES
+-- MODULES & FALLBACK DEFINITIONS
 ------------------------------------------------------------
 
 dofile(windower.addon_path .. 'skillchain.lua')
 dofile(windower.addon_path .. 'magicburst.lua')
 dofile(windower.addon_path .. 'settings.lua')
 
+-- Fallback structures to prevent nil comparison errors
+ws_sc_starter = ws_sc_starter or {}
+ws_sc_closers = ws_sc_closers or {}
+needed_buffs  = needed_buffs or {}
+food          = food or nil
+spell_blacklist = spell_blacklist or {}
+haste_blacklist = haste_blacklist or {}
+subjob_abilities = subjob_abilities or {}
+haste_samba_active = haste_samba_active or false
+
+targeting = targeting or {
+    monsters = {},
+    only_alive = true,
+    within_origin = true,
+    only_unclaimed = true,
+}
 
 ------------------------------------------------------------
 -- ADDON
@@ -22,7 +38,7 @@ dofile(windower.addon_path .. 'settings.lua')
 
 _addon.name     = 'lazy'
 _addon.author   = 'Ulli'
-_addon.version  = '0.7'
+_addon.version  = '0.9'
 _addon.commands = {'lazy'}
 
 
@@ -44,7 +60,7 @@ Action_Delay = 2
 local origin_x          = nil
 local origin_y          = nil
 local origin_z          = nil
-local origin_radius     = 15
+local origin_radius     = 10
 local origin_z_tolerance = 15
 local pathing_to_origin = false
 local path_tick         = 0
@@ -71,17 +87,31 @@ local ws_index           = 1
 local PlayerH            = 0
 local engaged_since      = nil
 
+-- DNC: set true whenever any weaponskill fires (Combat's starter/closer,
+-- or SC_Monitor's closer), so Try_DNC_Actions knows to fire Reverse
+-- Flourish right after -- consulted only when current_job == 'DNC'.
+local dnc_flourish_pending = false
+
+local DNC_WALTZ_TIERS = {
+    'Curing Waltz V',
+    'Curing Waltz IV',
+    'Curing Waltz III',
+    'Curing Waltz II',
+    'Curing Waltz',
+}
+
 
 ------------------------------------------------------------
 -- CAST TRACKING
 ------------------------------------------------------------
 
-local self_buff_last_cast = {}
+local self_buff_last_cast    = {}
 local self_ability_last_cast = {}
-local haste_last_cast     = {}
-local debuff_last_cast    = {}
-local refresh_last_cast   = {}
-local party_buff_last_cast = {}
+local haste_last_cast        = {}
+local debuff_last_cast       = {}
+local refresh_last_cast      = {}
+local party_buff_last_cast   = {}
+local entrust_last_cast      = {}
 
 local pending_cast = nil
 
@@ -120,7 +150,34 @@ for _, job in ipairs(profile_list) do
     end
 end
 
+JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
+
+
+------------------------------------------------------------
+-- BACKLINE & DISENGAGE OVERRIDES
+------------------------------------------------------------
+
+local function Enforce_Backline_Rules()
+    local player = windower.ffxi.get_player()
+    if not player or not active_profile then return end
+
+    if player.status == 1 and active_profile.auto_engage == false then
+        windower.send_command('input /attack off')
+    end
+end
+
+local function Ensure_Debuff_Target()
+    local player = windower.ffxi.get_player()
+    if not player or not active_profile then return end
+
+    if (active_profile.debuffs or active_profile.magic_burst)
+       and active_profile.auto_engage == false
+       and not windower.ffxi.get_mob_by_target('t') then
+       
+        windower.send_command('input /target <p1>; wait 0.2; input /target <bt>')
+    end
+end
 
 
 ------------------------------------------------------------
@@ -162,12 +219,13 @@ function Update_Job_Profile()
     current_job    = job
     active_profile = JOB_PROFILES[job] or JOB_PROFILES.DEFAULT
 
-    self_buff_last_cast  = {}
+    self_buff_last_cast    = {}
     self_ability_last_cast = {}
-    haste_last_cast      = {}
-    debuff_last_cast     = {}
-    refresh_last_cast    = {}
-    party_buff_last_cast = {}
+    haste_last_cast        = {}
+    debuff_last_cast       = {}
+    refresh_last_cast      = {}
+    party_buff_last_cast   = {}
+    entrust_last_cast      = {}
 
     windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
 end
@@ -178,19 +236,19 @@ end
 ------------------------------------------------------------
 
 function Get_WS_Starter()
-    return active_profile.ws_sc_starter or ws_sc_starter
+    return active_profile and active_profile.ws_sc_starter or ws_sc_starter
 end
 
 function Get_WS_Closers()
-    return active_profile.ws_sc_closers or ws_sc_closers
+    return active_profile and active_profile.ws_sc_closers or ws_sc_closers
 end
 
 function Get_Needed_Buffs()
-    return active_profile.needed_buffs or needed_buffs
+    return active_profile and active_profile.needed_buffs or needed_buffs
 end
 
 function Get_Food()
-    return active_profile.food or food
+    return active_profile and active_profile.food or food
 end
 
 
@@ -253,9 +311,17 @@ end)
 -- DEATH WATCH
 ------------------------------------------------------------
 
-local last_damage_source = nil
-local last_damage_kind   = nil
-local death_reported     = false
+local last_damage_source    = nil
+local last_damage_source_id = nil
+local last_damage_kind      = nil
+local death_reported        = false
+
+-- Aggro queue: ids of things that have hit us that AREN'T our current
+-- <t>. Adds go on the end as they hit us; we don't touch them while our
+-- current target is still alive -- finish that fight first, then work
+-- through whoever else started swinging on us, oldest first.
+local aggro_queue      = {}
+local AGGRO_QUEUE_CAP  = 10
 
 local function Resolve_Attack_Name(param)
     if not param or param == 0 then return nil end
@@ -274,6 +340,9 @@ windower.register_event('incoming chunk', function(id, data)
     local player = windower.ffxi.get_player()
     if not player then return end
 
+    local current    = windower.ffxi.get_mob_by_target('t')
+    local current_id = current and current.id
+
     local target_count = action['Target Count'] or 1
 
     for t = 1, target_count do
@@ -281,9 +350,28 @@ windower.register_event('incoming chunk', function(id, data)
             local reaction = action['Target ' .. t .. ' Action 1 Reaction']
 
             if reaction == 0 then
-                local actor = windower.ffxi.get_mob_by_id(action.Actor)
-                last_damage_source = actor and actor.name or last_damage_source or 'something unseen'
-                last_damage_kind   = Resolve_Attack_Name(action.Param)
+                local actor_id = action.Actor
+                local actor    = windower.ffxi.get_mob_by_id(actor_id)
+
+                last_damage_source    = actor and actor.name or last_damage_source or 'something unseen'
+                last_damage_source_id = actor_id
+                last_damage_kind      = Resolve_Attack_Name(action.Param)
+
+                if actor_id and actor_id ~= current_id then
+                    local already_queued = false
+                    for _, qid in ipairs(aggro_queue) do
+                        if qid == actor_id then
+                            already_queued = true
+                            break
+                        end
+                    end
+                    if not already_queued then
+                        aggro_queue[#aggro_queue + 1] = actor_id
+                        if #aggro_queue > AGGRO_QUEUE_CAP then
+                            table.remove(aggro_queue, 1)
+                        end
+                    end
+                end
             end
 
             break
@@ -319,6 +407,87 @@ end
 
 
 ------------------------------------------------------------
+-- ENGAGEMENT SYNC
+------------------------------------------------------------
+
+function Engagement_Sync()
+    while Start_Engine do
+        local player = windower.ffxi.get_player()
+
+        if player then
+            --------------------------------------------------------
+            -- Prune the aggro queue: drop anything that's died,
+            -- despawned, or been claimed by someone else in the
+            -- meantime -- other people are often around, and there's
+            -- no point queuing up a fight with something someone else
+            -- already has. Just falls through to the next entry.
+            --------------------------------------------------------
+            for i = #aggro_queue, 1, -1 do
+                local candidate = windower.ffxi.get_mob_by_id(aggro_queue[i])
+                if not candidate
+                    or not candidate.valid_target
+                    or not candidate.hpp or candidate.hpp <= 0
+                    or (candidate.claim_id ~= 0 and candidate.claim_id ~= player.id) then
+                    table.remove(aggro_queue, i)
+                end
+            end
+        end
+
+        if player and player.status == 1 then
+            local current = windower.ffxi.get_mob_by_target('t')
+
+            local current_ok =
+                current
+                and current.valid_target
+                and current.hpp and current.hpp > 0
+                and current.distance and math.sqrt(current.distance) <= 5
+
+            if not current_ok then
+                --------------------------------------------------------
+                -- Current target's dead/gone -- work through whoever
+                -- else started hitting us while we were busy, oldest
+                -- first, before falling back to a generic guess. We
+                -- never touch the queue while current_ok is true, so
+                -- an in-progress fight is never interrupted by an add
+                -- joining in -- finish the kill, then deal with it.
+                -- (Already-claimed-by-someone-else entries were pruned
+                -- above, so anything left here is fair game.)
+                --------------------------------------------------------
+                local switched = false
+
+                while #aggro_queue > 0 and not switched do
+                    local candidate_id = table.remove(aggro_queue, 1)
+                    local candidate = windower.ffxi.get_mob_by_id(candidate_id)
+                    if candidate and candidate.valid_target
+                        and candidate.hpp and candidate.hpp > 0
+                        and (candidate.claim_id == 0 or candidate.claim_id == player.id) then
+
+                        windower.add_to_chat(2, '[Lazy] Finishing that off, now dealing with: ' .. candidate.name)
+                        windower.send_command('input /target "' .. candidate.name .. '"')
+                        switched = true
+                    end
+                end
+
+                if not switched and last_damage_source_id then
+                    local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
+                    if attacker and attacker.valid_target
+                        and attacker.hpp and attacker.hpp > 0
+                        and (attacker.claim_id == 0 or attacker.claim_id == player.id)
+                        and (not current or attacker.id ~= current.id) then
+
+                        windower.add_to_chat(2, '[Lazy] Engaged target mismatch -- retargeting to ' .. attacker.name)
+                        windower.send_command('input /target "' .. attacker.name .. '"')
+                    end
+                end
+            end
+        end
+
+        coroutine.sleep(10)
+    end
+end
+
+
+------------------------------------------------------------
 -- OUTGOING PACKETS
 ------------------------------------------------------------
 
@@ -330,11 +499,26 @@ end)
 
 
 ------------------------------------------------------------
+-- STATUS CHANGE LISTENERS
+------------------------------------------------------------
+
+windower.register_event('status change', function(new_status_id)
+    if new_status_id == 1 then -- Engaged
+        Enforce_Backline_Rules()
+    end
+end)
+
+
+------------------------------------------------------------
 -- COMMANDS
 ------------------------------------------------------------
 
 windower.register_event('addon command', function(...)
-    local args    = T{...}:map(string.lower)
+    local raw_args = {...}
+    local args = {}
+    for i, v in ipairs(raw_args) do
+        args[i] = string.lower(tostring(v))
+    end
     local command = args[1]
 
     if not command or command == 'help' then
@@ -366,19 +550,22 @@ windower.register_event('addon command', function(...)
         if Start_Engine then return end
 
         Start_Engine = true
-        self_buff_last_cast  = {}
+        self_buff_last_cast    = {}
         self_ability_last_cast = {}
-        haste_last_cast      = {}
-        debuff_last_cast     = {}
-        refresh_last_cast    = {}
-        party_buff_last_cast = {}
+        haste_last_cast        = {}
+        debuff_last_cast       = {}
+        refresh_last_cast      = {}
+        party_buff_last_cast   = {}
+        entrust_last_cast      = {}
         path_last_distance       = nil
         path_last_progress_time  = nil
         path_stuck_alerted       = false
         origin_unreachable_since = nil
         last_damage_source       = nil
+        last_damage_source_id    = nil
         last_damage_kind         = nil
         death_reported           = false
+        aggro_queue              = {}
 
         Update_Job_Profile()
         Snapshot_Trusts()
@@ -392,6 +579,7 @@ windower.register_event('addon command', function(...)
         coroutine.schedule(Cure_Monitor, 0)
         coroutine.schedule(Trust_Monitor, 0)
         coroutine.schedule(Death_Monitor, 0)
+        coroutine.schedule(Engagement_Sync, 0)
         return
     end
 
@@ -442,6 +630,13 @@ windower.register_event('addon command', function(...)
     if command == 'assist' then
         settings.assist = args[2] or ''
         windower.add_to_chat(2, 'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'))
+        
+        if settings.assist ~= '' then
+            windower.send_command('input /assist ' .. settings.assist)
+            if active_profile and active_profile.auto_engage == false then
+                windower.send_command('wait 0.4; input /attack off')
+            end
+        end
         return
     end
 
@@ -694,6 +889,123 @@ end
 
 
 ------------------------------------------------------------
+-- PARTY-AWARE TARGET PRIORITY
+--
+-- Plain nearest-unclaimed autotargeting doesn't know or care what
+-- the rest of the party is doing -- it'll happily wander off after
+-- something on the whitelist while everyone else is fighting
+-- something else entirely. Priority order when picking what to
+-- fight next:
+--
+--   1. Whatever we're already on, if it's still a legitimate fight
+--      (alive, in range, and either unclaimed, ours, or a party
+--      member's claim) -- finish the kill before doing anything
+--      else.
+--   2. Whatever a party member is currently fighting (found via
+--      claim_id, not the whitelist -- we should help regardless of
+--      whether it's something we'd normally solo-farm).
+--   3. The normal nearest-unclaimed-whitelist search.
+--
+-- Only used for plain autotarget (no settings.target name set) --
+-- an explicit named target is a deliberate override and always
+-- wins outright.
+------------------------------------------------------------
+
+function Get_Party_Claim_Ids()
+    local ids = {}
+    local party = windower.ffxi.get_party()
+    if not party then return ids end
+
+    local player = windower.ffxi.get_player()
+
+    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+        local m = party[key]
+        if m then
+            local id = (m.mob and m.mob.id) or m.id
+            if id and (not player or id ~= player.id) then
+                ids[id] = true
+            end
+        end
+    end
+
+    return ids
+end
+
+function Find_Party_Target(party_ids)
+    if not party_ids or next(party_ids) == nil then return nil end
+
+    local mob_array = windower.ffxi.get_mob_array()
+    if not mob_array then return nil end
+
+    for index, mob in pairs(mob_array) do
+        if mob.valid_target and mob.hpp and mob.hpp > 0
+            and mob.claim_id and party_ids[mob.claim_id] then
+
+            local in_range = true
+            if origin_x and mob.x then
+                in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
+            end
+
+            if in_range then return index end
+        end
+    end
+
+    return nil
+end
+
+function Is_Legitimate_Target(mob, expected_name, party_ids)
+    if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
+        return false
+    end
+
+    local in_range = true
+    if origin_x and mob.x then
+        in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
+    end
+    if not in_range then return false end
+
+    local player = windower.ffxi.get_player()
+    local claimed_by_us_or_party =
+        mob.claim_id == 0
+        or (player and mob.claim_id == player.id)
+        or (party_ids and party_ids[mob.claim_id])
+
+    if expected_name then
+        -- A named target is still only legitimate if it's ours,
+        -- the party's, or unclaimed -- matching the name alone
+        -- isn't enough, or we'd happily keep "targeting" a mob a
+        -- total stranger has already claimed.
+        return string.lower(mob.name or '') == string.lower(expected_name)
+            and claimed_by_us_or_party
+    end
+
+    -- Already claimed by us or the party: keep helping regardless
+    -- of whitelist -- finish what's already being fought. Only
+    -- fall back to the whitelist check when nobody's claimed it.
+    if claimed_by_us_or_party then
+        return true
+    end
+
+    return Is_Targetable_Monster(mob.name)
+end
+
+function Choose_Target(party_ids)
+    local player = windower.ffxi.get_player()
+    if not player then return -1 end
+
+    local current = windower.ffxi.get_mob_by_target('t')
+    if Is_Legitimate_Target(current, nil, party_ids) then
+        return current.index
+    end
+
+    local party_target = Find_Party_Target(party_ids)
+    if party_target then return party_target end
+
+    return Find_Nearest_Target()
+end
+
+
+------------------------------------------------------------
 -- MONITORS
 ------------------------------------------------------------
 
@@ -725,12 +1037,10 @@ function Engine()
         local player = windower.ffxi.get_player()
         if player then
             Update_Job_Profile()
+            Enforce_Backline_Rules()
             buffactive = convert_buff_list(player.buffs or {})
             if isBusy < 1 then
-                local ok, err = pcall(Combat)
-                if not ok then
-                    windower.add_to_chat(167, '[Lazy Error] Combat runtime: ' .. tostring(err))
-                end
+                pcall(Combat)
             else
                 isBusy = isBusy - 1
             end
@@ -744,8 +1054,8 @@ function SC_Monitor()
         local player = windower.ffxi.get_player()
         if player and player.status == 1 and isBusy < 1 and player.vitals.tp >= 1000 then
             local target = windower.ffxi.get_mob_by_target('t')
-            if target and sc_ready(target.id) then
-                local options = sc_get_ws(target.id)
+            if target and sc_ready and sc_ready(target.id) then
+                local options = sc_get_ws(target.id) or {}
                 local fired = false
                 for _, ws in ipairs(options) do
                     if fired then break end
@@ -753,6 +1063,7 @@ function SC_Monitor()
                         if ws == closer then
                             windower.send_command('input /ws "' .. closer .. '" <t>')
                             isBusy = Action_Delay
+                            dnc_flourish_pending = true
                             fired = true
                             break
                         end
@@ -779,7 +1090,7 @@ function Target_Monitor()
                 if not name_ok or not in_range or target.claim_id ~= 0 then
                     windower.add_to_chat(2, 'Invalid target (' .. target.name .. ') - resetting')
                     windower.send_command('input /target <me>')
-                elseif target.distance <= 1 then
+                elseif target.distance <= 1 and active_profile.auto_engage ~= false then
                     windower.send_command('input /attack on')
                     windower.ffxi.follow(target.index)
                 end
@@ -798,18 +1109,23 @@ function Targeting()
                 local target = windower.ffxi.get_mob_by_target('t')
                 if target and target.claim_id ~= 0 then
                     windower.ffxi.follow(target.index)
-                    windower.send_command('input /attack on')
+                    if active_profile.auto_engage ~= false then
+                        windower.send_command('input /attack on')
+                    end
                 end
-                if not lockon_done then
+                if not lockon_done and active_profile.auto_engage ~= false then
                     windower.send_command('input /lockon')
                     lockon_done = true
                 end
             elseif settings.autotarget then
                 local target_id
-                if settings.target and settings.target ~= '' then
+                local expected_name = (settings.target and settings.target ~= '') and settings.target or nil
+                local party_ids = Get_Party_Claim_Ids()
+
+                if expected_name then
                     target_id = Find_Named_Target(settings.target)
                 else
-                    target_id = Find_Nearest_Target()
+                    target_id = Choose_Target(party_ids)
                 end
 
                 if target_id > 0 then
@@ -818,12 +1134,18 @@ function Targeting()
                     windower.ffxi.follow(target_id)
 
                     local mob = windower.ffxi.get_mob_by_index(target_id)
-                    local distance = mob and math.sqrt(mob.distance) or -1
-                    if mob and distance < 1 then
-                        windower.send_command('input /targetbnpc')
-                        if not lockon_done then
-                            windower.send_command('input /lockon')
-                            lockon_done = true
+
+                    if Is_Legitimate_Target(mob, expected_name, party_ids) then
+                        local distance = math.sqrt(mob.distance)
+                        if distance < 1 then
+                            windower.send_command('input /target "' .. mob.name .. '"')
+                            if active_profile.auto_engage ~= false then
+                                windower.send_command('input /attack on')
+                                if not lockon_done then
+                                    windower.send_command('input /lockon')
+                                    lockon_done = true
+                                end
+                            end
                         end
                     end
                 else
@@ -840,6 +1162,61 @@ end
 -- COMBAT
 ------------------------------------------------------------
 
+------------------------------------------------------------
+-- DNC ROTATION
+--
+-- Priority order:
+--   1. Emergency Waltz  -- self-targeted, no target needed, always
+--      checked first. HP <= 50% -> highest tier we can afford
+--      (checked against MP, since Waltzes cost MP, not TP).
+--   2. Reverse Flourish -- once Finishing Move has stacked to 5,
+--      or right after we just landed a weaponskill (dnc_flourish_
+--      pending, set at every WS-fire site).
+--   3. Box Step -- keep landing it (each successful land is +1
+--      Finishing Move, read straight off the stacked self-buff)
+--      until we're at 5 stacks.
+------------------------------------------------------------
+
+function Try_DNC_Actions()
+    local player = windower.ffxi.get_player()
+    if not player or not player.vitals then return false end
+
+    if player.vitals.hpp and player.vitals.hpp <= 50 then
+        for _, waltz in ipairs(DNC_WALTZ_TIERS) do
+            local ability = res.job_abilities:with('name', waltz)
+            if ability and Can_Cast_Ability(waltz)
+                and player.vitals.mp >= (ability.mp_cost or 0) then
+
+                windower.add_to_chat(167, '[Lazy] Emergency Waltz -- ' .. waltz .. ' (' .. player.vitals.hpp .. '% HP)')
+                Cast_Ability(waltz)
+                return true
+            end
+        end
+    end
+
+    local target = windower.ffxi.get_mob_by_target('t')
+    if not target or not target.distance or math.sqrt(target.distance) > 5 then
+        return false
+    end
+
+    local stacks = buffactive['Finishing Move'] or 0
+
+    if (stacks >= 5 or dnc_flourish_pending) and Can_Cast_Ability('Reverse Flourish') then
+        windower.send_command('input /ja "Reverse Flourish" <me>')
+        isBusy = Action_Delay
+        dnc_flourish_pending = false
+        return true
+    end
+
+    if stacks < 5 and Can_Cast_Ability('Box Step') then
+        windower.send_command('input /ja "Box Step" <t>')
+        isBusy = Action_Delay
+        return true
+    end
+
+    return false
+end
+
 function Combat()
     local player = windower.ffxi.get_player()
     if not player then return end
@@ -855,7 +1232,7 @@ function Combat()
         engaged_since = nil
     end
 
-    if active_profile.provoke_if_stuck
+    if active_profile and active_profile.provoke_if_stuck
         and player.status == 1
         and target
         and engaged_since
@@ -867,31 +1244,37 @@ function Combat()
         TurnToTarget()
     end
 
-    --------------------------------------------------------
-    -- MAGIC BURST CHECK (FIXED FALLBACK)
-    --------------------------------------------------------
-    if active_profile.magic_burst then
-        if type(Try_Magic_Burst) == 'function' then
-            local did_burst = Try_Magic_Burst()
-            if did_burst then return end  -- Successfully cast a burst spell
-        end
-        -- REMOVED early return logic for BLM/GEO/SCH/NIN so combat actions continue
+    local magic_burst_ok = active_profile and active_profile.magic_burst
+    if magic_burst_ok and active_profile.magic_burst_requires_buff then
+        magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff] and true or false
     end
 
-    -- TP Cap
+    if magic_burst_ok then
+        if Try_Magic_Burst and Try_Magic_Burst() then return end
+        if current_job == 'BLM' or current_job == 'GEO'
+            or current_job == 'SCH' or current_job == 'NIN' then
+            return
+        end
+    end
+
+    if active_profile and active_profile.dnc_rotation and current_job == 'DNC' then
+        if Try_DNC_Actions() then return end
+    end
+
     if target and target.distance and math.sqrt(target.distance) <= 3
         and player.vitals.tp >= 3000 and isBusy == 0 and not isCasting
         and starter and starter[1]
+        and active_profile.use_weaponskills ~= false
     then
         windower.send_command('input /ws "' .. starter[1] .. '" <t>')
         isBusy = Action_Delay
+        dnc_flourish_pending = true
         return
     end
 
-    if player.status ~= 1 then return end
+    if player.status ~= 1 and active_profile.auto_engage ~= false then return end
     lockon_done = false
 
-    -- Job abilities / Food
     if player.vitals.tp >= 400 and target and target.distance
         and math.sqrt(target.distance) <= 3
     then
@@ -899,9 +1282,9 @@ function Combat()
         for _, ability_name in ipairs(Get_Needed_Buffs() or {}) do
             if not buffactive[ability_name] then
                 if ability_name == 'Food' then
-                    local food = Get_Food()
-                    if food then
-                        windower.send_command('input /item "' .. food .. '" <me>')
+                    local food_item = Get_Food()
+                    if food_item then
+                        windower.send_command('input /item "' .. food_item .. '" <me>')
                         isBusy = Action_Delay
                         return
                     end
@@ -921,9 +1304,11 @@ function Combat()
     if target and target.distance and math.sqrt(target.distance) <= 3 then
         local tp = player.vitals.tp
 
-        if not sc_active(target.id) and starter and tp >= starter[2] then
+        if sc_active and not sc_active(target.id) and starter and tp >= starter[2] 
+            and active_profile.use_weaponskills ~= false then
             windower.send_command('input /ws "' .. starter[1] .. '" <t>')
             isBusy = Action_Delay
+            dnc_flourish_pending = true
             return
         end
 
@@ -1025,7 +1410,7 @@ end
 ------------------------------------------------------------
 
 function Buff_Tick()
-    if not settings.buffs_active then return end
+    if not settings.buffs_active or not active_profile then return end
 
     if pending_cast and os.clock() - pending_cast.sent_at > 10 then
         pending_cast = nil
@@ -1037,28 +1422,67 @@ function Buff_Tick()
     local now = os.clock()
     Update_Job_Profile()
 
+    -- 1. DEBUFF LOGIC (With require_no_pet & post-ability logic)
     if active_profile.debuffs then
+        Ensure_Debuff_Target()
         local target = windower.ffxi.get_mob_by_target('t')
+        local pet    = windower.ffxi.get_mob_by_target('pet')
+
         if target and target.hpp and target.hpp > 0 and not Is_Blacklisted(target.name) then
             for _, debuff in ipairs(active_profile.debuffs) do
-                local last     = debuff_last_cast[debuff.name]
+                -- debuff.name may be a single spell name, or a list of
+                -- fallback names in priority order (e.g. tier II, then
+                -- tier I, for jobs that may not have the higher tier).
+                local names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
+                local key   = names[1]
+
+                local last     = debuff_last_cast[key]
                 local interval = (debuff.interval or 1) * 60
-                if not last or now - last >= interval then
-                    local spell = res.spells:with('name', debuff.name)
-                    if spell and Cast_Spell_On(debuff.name, '<t>') then
-                        pending_cast = {
-                            store    = debuff_last_cast,
-                            key      = debuff.name,
-                            spell_id = spell.id,
-                            sent_at  = now,
-                        }
+                
+                local pet_ok = true
+                if debuff.require_no_pet and pet then
+                    pet_ok = false
+                end
+
+                if pet_ok and (not last or now - last >= interval) then
+                    -- Pre-ability check (e.g., Blaze of Glory)
+                    if debuff.use_ability_before and Can_Cast_Ability(debuff.use_ability_before) then
+                        Cast_Ability(debuff.use_ability_before)
                         return
+                    end
+
+                    local spell_target = debuff.target or '<t>'
+
+                    for _, name in ipairs(names) do
+                        local spell = res.spells:with('name', name)
+                        if spell and Cast_Spell_On(name, spell_target) then
+                            pending_cast = {
+                                store    = debuff_last_cast,
+                                key      = key,
+                                spell_id = spell.id,
+                                sent_at  = now,
+                            }
+
+                            -- Post-ability sequence (e.g., Ecliptic Attrition)
+                            if debuff.use_ability_after then
+                                local follow_up = debuff.use_ability_after
+                                coroutine.schedule(function()
+                                    coroutine.sleep(2.5) -- Wait for spell finish animation
+                                    if Can_Cast_Ability(follow_up) then
+                                        Cast_Ability(follow_up)
+                                    end
+                                end, 0)
+                            end
+
+                            return
+                        end
                     end
                 end
             end
         end
     end
 
+    -- 2. JOB ABILITIES
     for _, ability_name in ipairs(active_profile.job_abilities or {}) do
         if Can_Cast_Ability(ability_name) then
             Cast_Ability(ability_name)
@@ -1066,23 +1490,41 @@ function Buff_Tick()
         end
     end
 
+    -- 3. SELF BUFFS
     for _, buff in ipairs(active_profile.self_buffs or {}) do
+        -- buff.name may be a single spell name, or a list of fallback
+        -- names in priority order (e.g. Storm II, then Storm I, for
+        -- jobs that may not have the higher tier).
+        local names = type(buff.name) == 'table' and buff.name or {buff.name}
+        local key   = names[1]
+
         local interval = (buff.interval or 20) * 60
-        local last     = self_buff_last_cast[buff.name]
-        if not last or now - last >= interval then
-            local spell = res.spells:with('name', buff.name)
-            if spell and Cast_Spell_On(buff.name, '<me>') then
-                pending_cast = {
-                    store    = self_buff_last_cast,
-                    key      = buff.name,
-                    spell_id = spell.id,
-                    sent_at  = now,
-                }
-                return
+        local last     = self_buff_last_cast[key]
+
+        -- require_buff lets an entry only fire while a given player
+        -- buff is active (e.g. only keep Thunderstorm up in Dark Arts).
+        local buff_ok = true
+        if buff.require_buff and not buffactive[buff.require_buff] then
+            buff_ok = false
+        end
+
+        if buff_ok and (not last or now - last >= interval) then
+            for _, name in ipairs(names) do
+                local spell = res.spells:with('name', name)
+                if spell and Cast_Spell_On(name, '<me>') then
+                    pending_cast = {
+                        store    = self_buff_last_cast,
+                        key      = key,
+                        spell_id = spell.id,
+                        sent_at  = now,
+                    }
+                    return
+                end
             end
         end
     end
 
+    -- 4. SELF ABILITIES (Extended Pet & MP logic)
     local self_ability_list = {}
     for _, ab in ipairs(active_profile.self_abilities or {}) do
         self_ability_list[#self_ability_list + 1] = ab
@@ -1100,8 +1542,27 @@ function Buff_Tick()
         local interval = (ab.interval or 20) * 60
         local last     = self_ability_last_cast[ab.name]
         local due      = not last or now - last >= interval
+
         if due then
-            if Can_Cast_Ability(ab.name) then
+            local pet_ok = true
+            local mp_ok  = true
+            local pet    = windower.ffxi.get_mob_by_target('pet')
+
+            if ab.require_pet and not pet then
+                pet_ok = false
+            elseif ab.max_pet_hpp and pet and pet.hpp and pet.hpp > ab.max_pet_hpp then
+                pet_ok = false
+            elseif ab.min_pet_hpp and pet and pet.hpp and pet.hpp < ab.min_pet_hpp then
+                pet_ok = false
+            end
+
+            if ab.max_mp_percent and player.vitals and player.vitals.mpp then
+                if player.vitals.mpp > ab.max_mp_percent then
+                    mp_ok = false
+                end
+            end
+
+            if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
                 Cast_Ability(ab.name)
                 self_ability_last_cast[ab.name] = now
                 return
@@ -1109,6 +1570,60 @@ function Buff_Tick()
         end
     end
 
+    -- 5. ENTRUST BUFFS
+    if active_profile.entrust_buffs then
+        local me_zone = windower.ffxi.get_info().zone
+        local party   = windower.ffxi.get_party()
+
+        for _, eb in ipairs(active_profile.entrust_buffs) do
+            local interval = (eb.interval or 1) * 60
+            local last     = entrust_last_cast[eb.spell]
+
+            if not last or now - last >= interval then
+                local chosen_target = nil
+
+                if type(eb.targets) == 'table' and eb.targets.jobs and party then
+                    for _, job in ipairs(eb.targets.jobs) do
+                        if chosen_target then break end
+                        for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+                            local m = party[key]
+                            if m and m.name and m.mob and m.mob.id
+                                and m.zone == me_zone
+                                and not m.mob.is_npc
+                                and key ~= 'p0'
+                                and m.main_job == job
+                                and m.mob.distance
+                                and math.sqrt(m.mob.distance) <= 20
+                            then
+                                chosen_target = m.name
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if chosen_target then
+                    if Can_Cast_Ability(eb.ability or 'Entrust') then
+                        Cast_Ability(eb.ability or 'Entrust')
+                        return
+                    end
+
+                    local spell = res.spells:with('name', eb.spell)
+                    if spell and Cast_Spell_On(eb.spell, chosen_target) then
+                        pending_cast = {
+                            store    = entrust_last_cast,
+                            key      = eb.spell,
+                            spell_id = spell.id,
+                            sent_at  = now,
+                        }
+                        return
+                    end
+                end
+            end
+        end
+    end
+
+    -- 6. PARTY BUFFS
     if active_profile.party_buffs then
         local me_zone = windower.ffxi.get_info().zone
         local party   = windower.ffxi.get_party()
@@ -1176,6 +1691,7 @@ function Buff_Tick()
         end
     end
 
+    -- 7. HASTE HANDLING
     if active_profile.haste_active and not active_profile.party_buffs then
         local self_interval = (active_profile.haste_self_interval or 20) * 60
         local self_last     = haste_last_cast.me
@@ -1235,6 +1751,7 @@ function Buff_Tick()
         end
     end
 
+    -- 8. REFRESH HANDLING
     if active_profile.refresh_targets and not active_profile.party_buffs then
         local refresh   = active_profile.refresh_targets
         local interval  = (refresh.interval or 6) * 60
@@ -1306,13 +1823,38 @@ function Party_Has_WHM()
 end
 
 function Cure_Bot_Tick()
-    if not settings.cure_active then return end
+    if not settings.cure_active or not active_profile then return end
     Update_Job_Profile()
 
     local cure_active = active_profile.cure_bot_active
     if current_job == 'SCH' and active_profile.cure_bot_if_no_whm then
         cure_active = not Party_Has_WHM()
     end
+
+    if cure_active and active_profile.cure_bot_requires_buff then
+        cure_active = buffactive[active_profile.cure_bot_requires_buff] and true or false
+    end
+
+    --------------------------------------------------------
+    -- FAILSAFE CURING
+    --
+    -- Some jobs (RDM, etc.) aren't the intended healer -- there's
+    -- normally a WHM trust/player on hand -- but if someone drops
+    -- to a genuinely dangerous HP% anyway, something's clearly
+    -- gone wrong with that healer, and standing there not curing
+    -- because "that's not my job" isn't useful. This only kicks in
+    -- when the profile isn't already a full-time healer (cure_active
+    -- above), and only at a much lower threshold, so it never
+    -- competes with or duplicates the real healer's job -- it's
+    -- purely there to keep the party alive if the real one drops
+    -- the ball.
+    --------------------------------------------------------
+    local failsafe = false
+    if not cure_active and active_profile.emergency_cure then
+        cure_active = true
+        failsafe = true
+    end
+
     if not cure_active then return end
 
     if pending_cast and os.clock() - pending_cast.sent_at > 10 then
@@ -1333,7 +1875,9 @@ function Cure_Bot_Tick()
             worst_member = m
         end
     end
-    if not worst_member or worst_hpp >= 100 then return end
+
+    local threshold = failsafe and (active_profile.emergency_cure_threshold or 25) or 75
+    if not worst_member or worst_hpp > threshold then return end
 
     local target_name = worst_member.name or (worst_member.mob and worst_member.mob.name)
     if not target_name then return end
@@ -1344,8 +1888,14 @@ function Cure_Bot_Tick()
 
     local target = (target_name == player.name) and '<me>' or target_name
 
+    if failsafe then
+        windower.add_to_chat(167, '[Lazy] Failsafe cure -- ' .. target_name .. ' at ' .. worst_hpp .. '% HP, no healer response')
+    end
+
     for _, tier in ipairs(active_profile.cure_tiers or {}) do
-        if missing_hp < tier.max_missing then
+        local min_m = tier.min_missing or 0
+        local max_m = tier.max_missing or 999999
+        if missing_hp >= min_m and missing_hp <= max_m then
             for _, spell_name in ipairs(tier.spells) do
                 if Cast_Spell_On(spell_name, target) then return end
             end
@@ -1400,7 +1950,7 @@ function Trust_Tick()
     local present = {}
     for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
         local m = party[key]
-        if m and m.hp and m.hp > 0 then
+        if m and m.name and m.hp and m.hp > 0 then
             present[m.name] = true
         end
     end

@@ -3,16 +3,6 @@
 -- BLM JOB PROFILE
 ------------------------------------------------------------
 --
--- Black Mage
---
--- SOLO:
---   Repeatedly nukes targets without waiting for skillchains.
---
--- PLAYER PARTY:
---   Uses Magic Burst mode and waits for skillchains.
---
--- Trust-only parties count as SOLO.
---
 -- Loaded by Lazy.lua into JOB_PROFILES.BLM
 ------------------------------------------------------------
 
@@ -61,7 +51,6 @@ JOB_PROFILES.BLM = {
 --------------------------------------------------------
 
 self_buffs = {
-    {name = {'Thunderstorm'}, interval = 3, solo_only = true},
     {name = {'Windstorm'}, interval = 3, party_only = true, require_buff = 'Dark Arts'},
     {name = {'Klimaform'}, interval = 3},
 },
@@ -101,25 +90,6 @@ self_abilities = {
         Water = {'Water VI', 'Water V', 'Water IV'},
         Darkness = {'Comet', 'Impact'},
     },
-
-
-    --------------------------------------------------------
-    -- SOLO NUKE MODE
-    --------------------------------------------------------
-
-    solo_mode = false,
-
- solo_spells = {
-    'Aero IV',
-    'Fire IV',
-    'Thunder IV',
-    'Blizzard IV',
-    'Water IV',
-    'Stone IV',
-     
-},
-
-
     --------------------------------------------------------
     -- CURE BOT
     --------------------------------------------------------
