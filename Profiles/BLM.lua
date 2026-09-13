@@ -1,3 +1,4 @@
+
 ------------------------------------------------------------
 -- BLM JOB PROFILE
 ------------------------------------------------------------
@@ -22,20 +23,12 @@
 
 local function BLM_Has_Real_Player_Party()
     local party = windower.ffxi.get_party()
-
-    if not party then
-        return false
-    end
+    if not party then return false end
 
     -- p0 is ourselves, so start at p1.
     for i = 1, 5 do
         local member = party['p' .. i]
-
-        if member
-            and member.name
-            and member.name ~= ''
-            and not member.trust
-        then
+        if member and member.name and member.name ~= '' and not member.trust then
             return true
         end
     end
@@ -43,12 +36,8 @@ local function BLM_Has_Real_Player_Party()
     return false
 end
 
-
 function BLM_Get_Mode()
-    if BLM_Has_Real_Player_Party() then
-        return 'BURST'
-    end
-
+    if BLM_Has_Real_Player_Party() then return 'BURST' end
     return 'SOLO'
 end
 
@@ -66,52 +55,70 @@ JOB_PROFILES.BLM = {
     auto_engage = false,
     use_weaponskills = false,
 
-    --------------------------------------------------------
-    -- SUPPORT / BUFFS
-    --------------------------------------------------------
 
-    self_buffs = {
-        { name = {'Windstorm'}, interval = 3, require_buff = 'Dark Arts' },
-        { name = {'Klimaform'}, interval = 3 },
-    },
+  --------------------------------------------------------
+-- SUPPORT / BUFFS
+--------------------------------------------------------
 
+self_buffs = {
+    {name = {'Thunderstorm'}, interval = 3, solo_only = true},
+    {name = {'Windstorm'}, interval = 3, party_only = true, require_buff = 'Dark Arts'},
+    {name = {'Klimaform'}, interval = 3},
+},
+
+
+    --------------------------------------------------------
+    -- JOB ABILITIES
+    --------------------------------------------------------
+self_abilities = {
+    {name = 'Dark Arts', interval = 10},
+    {name = 'Sublimation', interval = 5},
+    {name = 'Mana Well', interval = 3},
+},
     --------------------------------------------------------
     -- MAGIC BURST
     --------------------------------------------------------
 
     magic_burst = true,
 
-    burst_spells = {
-		Aero     = { 'Aero VI', 'Aero V', 'Aero IV' },
-        Fire     = { 'Fire VI', 'Fire V', 'Fire IV' },
-        Blizzard = { 'Blizzard VI', 'Blizzard V', 'Blizzard IV' },
-        Stone    = { 'Stone VI', 'Stone V', 'Stone IV' },
-        Thunder  = { 'Thunder VI', 'Thunder V', 'Thunder IV' },
-        Water    = { 'Water VI', 'Water V', 'Water IV' },
-        Darkness = { 'Comet', 'Impact' },
+    -- Checked in this order. Aero is always preferred over Fire.
+    burst_priority = {
+        'Aero',
+        'Fire',
+        'Blizzard',
+        'Stone',
+        'Thunder',
+        'Water',
+        'Darkness',
     },
+
+    burst_spells = {
+        Aero = {'Aero VI', 'Aero V', 'Aero IV'},
+        Fire = {'Fire VI', 'Fire V', 'Fire IV'},
+        Blizzard = {'Blizzard VI', 'Blizzard V', 'Blizzard IV'},
+        Stone = {'Stone VI', 'Stone V', 'Stone IV'},
+        Thunder = {'Thunder VI', 'Thunder V', 'Thunder IV'},
+        Water = {'Water VI', 'Water V', 'Water IV'},
+        Darkness = {'Comet', 'Impact'},
+    },
+
 
     --------------------------------------------------------
     -- SOLO NUKE MODE
     --------------------------------------------------------
-    --
-    -- Used when there are no actual player party members.
-    -- Trusts do NOT count as players.
-    --
-    -- Lazy.lua can repeatedly cast from this list instead
-    -- of waiting for a skillchain / magic burst window.
-    --------------------------------------------------------
 
     solo_mode = false,
 
-    solo_spells = {
-        'Fire VI',
-        'Blizzard VI',
-        'Aero VI',
-        'Stone VI',
-        'Thunder VI',
-        'Water VI',
-    },
+ solo_spells = {
+    'Aero IV',
+    'Fire IV',
+    'Thunder IV',
+    'Blizzard IV',
+    'Water IV',
+    'Stone IV',
+     
+},
+
 
     --------------------------------------------------------
     -- CURE BOT
@@ -120,20 +127,9 @@ JOB_PROFILES.BLM = {
     cure_bot_active = false,
 
     cure_tiers = {
-        {
-            min_missing = 100,
-            max_missing = 350,
-            spells = { 'Cure II', 'Cure' },
-        },
-        {
-            min_missing = 351,
-            max_missing = 800,
-            spells = { 'Cure III', 'Cure II' },
-        },
-        {
-            min_missing = 801,
-            max_missing = 999999,
-            spells = { 'Cure IV', 'Cure III' },
-        },
+        {min_missing = 100, max_missing = 350, spells = {'Cure II', 'Cure'}},
+        {min_missing = 351, max_missing = 800, spells = {'Cure III', 'Cure II'}},
+        {min_missing = 801, max_missing = 999999, spells = {'Cure IV', 'Cure III'}},
     },
 }
+

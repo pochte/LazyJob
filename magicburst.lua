@@ -1,13 +1,10 @@
-
 ------------------------------------------------------------
 -- MAGICBURST.LUA
 --
 -- Shared magic / burst engine for:
---
 --   BLM / RDM / GEO / SCH / NIN
 --
 -- Handles:
---
 --   * Skillchain element detection
 --   * Magic Burst spell selection
 --   * Magic Burst casting
@@ -16,32 +13,14 @@
 --   * RDM SOLO/BURST mode
 --
 -- Job profiles define:
---
 --   magic_burst
 --   burst_spells
 --   solo_spells
 --   solo_mode
 --
 -- Optional profile functions:
---
 --   BLM_Get_Mode()
 --   RDM_Get_Mode()
---
--- Required globals/functions from lazy.lua:
---
---   active_profile
---   current_job
---   isCasting
---   isBusy
---   Start_Engine
---   Action_Delay
---   Is_Moving()
---   Is_Blacklisted()
---   sc_active()
---   sc_ready()
---   sc_get_property()
---   res
---   windower
 ------------------------------------------------------------
 
 
@@ -50,40 +29,46 @@
 ------------------------------------------------------------
 
 local SC_ELEMENTS = {
+    -- Level 4 skillchains
+    Radiance = 'Wind',
+    Umbra = 'Darkness',
 
-    --------------------------------------------------------
-    -- LEVEL 4
-    --------------------------------------------------------
+    -- Level 3 skillchains
+    Light = 'Wind',
+    Darkness = 'Darkness',
 
-    Radiance      = 'Light',
-    Umbra         = 'Darkness',
-
-
-    --------------------------------------------------------
-    -- LEVEL 3
-    --------------------------------------------------------
-
-    Light         = 'Light',
-    Darkness      = 'Darkness',
-
-    Gravitation   = 'Earth',
+    -- Level 2 skillchains
+    Gravitation = 'Earth',
     Fragmentation = 'Wind',
-    Distortion    = 'Ice',
-    Fusion        = 'Fire',
+    Distortion = 'Ice',
+    Fusion = 'Fire',
 
-
-    --------------------------------------------------------
-    -- LEVEL 2
-    --------------------------------------------------------
-
-    Compression   = 'Darkness',
-    Liquefaction  = 'Fire',
-    Induration    = 'Ice',
+    -- Level 1 skillchains
+    Compression = 'Darkness',
+    Liquefaction = 'Fire',
+    Induration = 'Ice',
     Reverberation = 'Water',
-    Transfixion   = 'Light',
-    Scission      = 'Earth',
-    Detonation    = 'Wind',
-    Impaction     = 'Lightning',
+    Transfixion = 'Wind',
+    Scission = 'Earth',
+    Detonation = 'Wind',
+    Impaction = 'Lightning',
+}
+
+
+------------------------------------------------------------
+-- SC ELEMENT -> MAGIC ELEMENT
+------------------------------------------------------------
+--
+-- FFXI's skillchain element names do not always match
+-- the spell family names used by the profile.
+--
+-- Wind      -> Aero
+-- Lightning -> Thunder
+------------------------------------------------------------
+
+local MAGIC_ELEMENTS = {
+    Wind = 'Aero',
+    Lightning = 'Thunder',
 }
 
 
@@ -92,21 +77,11 @@ local SC_ELEMENTS = {
 ------------------------------------------------------------
 
 function Get_SC_Element(target)
+    if not target then return nil end
+    if not target.id then return nil end
+    if not sc_get_property then return nil end
 
-    if not target then
-        return nil
-    end
-
-    if not target.id then
-        return nil
-    end
-
-    if not sc_get_property then
-        return nil
-    end
-
-    local property =
-        sc_get_property(target.id)
+    local property = sc_get_property(target.id)
 
     if not property then
         return nil
@@ -117,13 +92,24 @@ end
 
 
 ------------------------------------------------------------
+-- GET MAGIC ELEMENT
+------------------------------------------------------------
+
+local function Get_Magic_Element(sc_element)
+    if not sc_element then
+        return nil
+    end
+
+    return MAGIC_ELEMENTS[sc_element] or sc_element
+end
+
+
+------------------------------------------------------------
 -- GET CURRENT MAGIC TARGET
 ------------------------------------------------------------
 
 local function Get_Magic_Target()
-
-    local target =
-        windower.ffxi.get_mob_by_target('t')
+    local target = windower.ffxi.get_mob_by_target('t')
 
     if not target then
         return nil
@@ -137,9 +123,7 @@ local function Get_Magic_Target()
         return nil
     end
 
-    if not target.hpp
-        or target.hpp <= 0
-    then
+    if not target.hpp or target.hpp <= 0 then
         return nil
     end
 
@@ -160,15 +144,22 @@ end
 ------------------------------------------------------------
 
 local function Can_Cast()
-
+    -- Absolute casting lock.
     if isCasting then
         return false
     end
 
+    -- Action delay lock.
     if isBusy > 0 then
         return false
     end
 
+    -- Do not cast while resting.
+    if mp_resting then
+        return false
+    end
+
+    -- Do not cast while moving.
     if Is_Moving() then
         return false
     end
@@ -178,95 +169,102 @@ end
 
 
 ------------------------------------------------------------
--- CAST SPELL
+-- GET SPELL DATA
 ------------------------------------------------------------
 
-local function Cast_Magic_Spell(spell_name)
+local function Get_Spell_Data(spell_name)
+    if not spell_name or spell_name == '' then
+        return nil
+    end
 
+    return res.spells:with('name', spell_name)
+end
+
+
+------------------------------------------------------------
+-- CHECK SPELL AVAILABILITY
+------------------------------------------------------------
+
+local function Spell_Is_Available(spell_name, player, recasts)
     if not spell_name then
         return false
     end
-
-
-    --------------------------------------------------------
-    -- Resolve spell.
-    --------------------------------------------------------
-
-    local spell =
-        res.spells:with(
-            'name',
-            spell_name
-        )
-
-    if not spell then
-        return false
-    end
-
-
-    --------------------------------------------------------
-    -- Player.
-    --------------------------------------------------------
-
-    local player =
-        windower.ffxi.get_player()
 
     if not player then
         return false
     end
 
+    if not recasts then
+        return false
+    end
 
-    --------------------------------------------------------
-    -- Recasts.
-    --------------------------------------------------------
+    local spell = Get_Spell_Data(spell_name)
 
-    local recasts =
-        windower.ffxi.get_spell_recasts()
+    if not spell then
+        return false
+    end
+
+    -- Spell must be completely off cooldown.
+    if recasts[spell.id] ~= 0 then
+        return false
+    end
+
+    -- Must have enough MP.
+    if player.vitals.mp < spell.mp_cost then
+        return false
+    end
+
+    return true
+end
+
+
+------------------------------------------------------------
+-- CAST MAGIC SPELL
+------------------------------------------------------------
+
+local function Cast_Magic_Spell(spell_name)
+    if not spell_name then
+        return false
+    end
+
+    if not Can_Cast() then
+        return false
+    end
+
+    local spell = Get_Spell_Data(spell_name)
+
+    if not spell then
+        return false
+    end
+
+    local player = windower.ffxi.get_player()
+
+    if not player then
+        return false
+    end
+
+    local recasts = windower.ffxi.get_spell_recasts()
 
     if not recasts then
         return false
     end
 
-    if recasts[spell.id] ~= 0 then
+    if not Spell_Is_Available(spell_name, player, recasts) then
         return false
     end
 
-
     --------------------------------------------------------
-    -- MP.
-    --------------------------------------------------------
-
-    if player.vitals.mp < spell.mp_cost then
-        return false
-    end
-
-
-    --------------------------------------------------------
-    -- Don't cast if something started between checks.
+    -- Lock immediately before issuing the command.
+    --
+    -- This prevents another coroutine / combat pass from
+    -- trying to issue another spell during this action.
     --------------------------------------------------------
 
-    if isCasting
-        or isBusy > 0
-    then
-        return false
-    end
-
-    if Is_Moving() then
-        return false
-    end
-
-
-    --------------------------------------------------------
-    -- Cast.
-    --------------------------------------------------------
+    isBusy = Action_Delay
 
     windower.send_command(
-        'input /ma "' ..
-        spell_name ..
-        '" <t>'
+        'input /ma "' .. spell_name .. '" <t>'
     )
-
-    isBusy =
-        Action_Delay
 
     return true
 end
@@ -276,21 +274,46 @@ end
 -- FIND BURST SPELL
 ------------------------------------------------------------
 --
--- The profile supplies spells strongest -> weakest.
+-- The skillchain determines the ONLY legal element.
+--
+-- Radiance      -> Wind      -> Aero
+-- Light         -> Wind      -> Aero
+-- Fragmentation -> Wind      -> Aero
+-- Detonation    -> Wind      -> Aero
+-- Transfixion   -> Wind      -> Aero
+--
+-- Impaction     -> Lightning -> Thunder
+--
+-- Fusion        -> Fire
+-- Liquefaction  -> Fire
+--
+-- Distortion    -> Ice
+-- Induration    -> Ice
+--
+-- Gravitation   -> Earth
+-- Scission      -> Earth
+--
+-- Reverberation -> Water
+--
+-- Compression  -> Darkness
+-- Darkness     -> Darkness
+-- Umbra        -> Darkness
+--
+-- IMPORTANT:
+-- burst_priority is NOT used here.
+--
+-- The skillchain element must always win.
 --
 -- Example:
 --
--- Fire = {
---     'Fire VI',
---     'Fire V',
---     'Fire IV',
--- }
+--   Wind SC  -> Aero VI/V/IV
+--   Fire SC  -> Fire VI/V/IV
 --
--- If Fire VI is unavailable, Fire V is tried.
+-- We do NOT cast Fire simply because it happens to be
+-- earlier in a profile priority list.
 ------------------------------------------------------------
 
 function Get_Burst_Spell(target)
-
     if not target then
         return nil
     end
@@ -303,80 +326,71 @@ function Get_Burst_Spell(target)
         return nil
     end
 
-
     --------------------------------------------------------
-    -- Determine SC element.
+    -- Read the current skillchain.
     --------------------------------------------------------
 
-    local element =
-        Get_SC_Element(target)
+    local sc_element = Get_SC_Element(target)
 
-    if not element then
+    if not sc_element then
         return nil
     end
 
+    --------------------------------------------------------
+    -- Convert FFXI element names to profile spell families.
+    --------------------------------------------------------
+
+    local magic_element = Get_Magic_Element(sc_element)
+
+    if not magic_element then
+        return nil
+    end
 
     --------------------------------------------------------
-    -- Candidate spells.
+    -- Get ONLY the spell list for this SC element.
     --------------------------------------------------------
 
     local candidates =
-        active_profile.burst_spells[element]
+        active_profile.burst_spells[magic_element]
 
     if not candidates then
         return nil
     end
 
-
-    --------------------------------------------------------
-    -- Player.
-    --------------------------------------------------------
-
-    local player =
-        windower.ffxi.get_player()
+    local player = windower.ffxi.get_player()
 
     if not player then
         return nil
     end
 
-
-    --------------------------------------------------------
-    -- Recasts.
-    --------------------------------------------------------
-
-    local recasts =
-        windower.ffxi.get_spell_recasts()
+    local recasts = windower.ffxi.get_spell_recasts()
 
     if not recasts then
         return nil
     end
 
-
     --------------------------------------------------------
-    -- Strongest available spell.
+    -- Candidates must already be ordered strongest -> weakest
+    -- in the job profile.
+    --
+    -- Example:
+    --   Aero VI
+    --   Aero V
+    --   Aero IV
+    --
+    -- We never invent a lower tier here.
+    -- If none are available, the burst simply fails.
     --------------------------------------------------------
 
     for _, spell_name in ipairs(candidates) do
-
-        local spell =
-            res.spells:with(
-                'name',
-                spell_name
-            )
-
-        if spell then
-
-            local recast =
-                recasts[spell.id]
-
-            if recast == 0
-                and player.vitals.mp >= spell.mp_cost
-            then
-                return spell_name
-            end
+        if Spell_Is_Available(
+            spell_name,
+            player,
+            recasts
+        ) then
+            return spell_name
         end
     end
-
 
     return nil
 end
@@ -387,78 +401,63 @@ end
 ------------------------------------------------------------
 
 function Try_Magic_Burst()
-
-    --------------------------------------------------------
-    -- Need a profile.
-    --------------------------------------------------------
-
     if not active_profile then
         return false
     end
-
-
-    --------------------------------------------------------
-    -- Profile must support magic bursts.
-    --------------------------------------------------------
 
     if not active_profile.magic_burst then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Don't interrupt another action.
+    -- Absolute action/movement lock.
     --------------------------------------------------------
 
     if not Can_Cast() then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Target.
+    -- Get the target.
     --------------------------------------------------------
 
-    local target =
-        Get_Magic_Target()
+    local target = Get_Magic_Target()
 
     if not target then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Skillchain must be active.
+    -- A skillchain must currently exist.
     --------------------------------------------------------
 
     if not sc_active(target.id) then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Must be inside burst window.
+    -- We must still be inside the Magic Burst window.
     --------------------------------------------------------
 
     if not sc_ready(target.id) then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Find strongest available burst spell.
+    -- Determine the burst spell from the CURRENT SC.
     --------------------------------------------------------
 
-    local spell_name =
-        Get_Burst_Spell(target)
+    local spell_name = Get_Burst_Spell(target)
 
     if not spell_name then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Cast.
+    -- Cast it.
+    --
+    -- Cast_Magic_Spell performs its own final cooldown,
+    -- MP, movement and casting checks.
     --------------------------------------------------------
 
     return Cast_Magic_Spell(spell_name)
@@ -468,45 +467,30 @@ end
 ------------------------------------------------------------
 -- DETERMINE SOLO / BURST MODE
 ------------------------------------------------------------
---
--- BLM and RDM can provide their own mode functions.
---
--- Expected return:
---
---   'SOLO'
---   'BURST'
---
--- Generic jobs fall back to active_profile.solo_mode.
-------------------------------------------------------------
 
 local function Get_Magic_Mode()
-
     --------------------------------------------------------
-    -- BLM.
+    -- BLM can provide its own mode logic.
     --------------------------------------------------------
 
     if current_job == 'BLM' then
-
         if BLM_Get_Mode then
             return BLM_Get_Mode()
         end
     end
 
-
     --------------------------------------------------------
-    -- RDM.
+    -- RDM can provide its own mode logic.
     --------------------------------------------------------
 
     if current_job == 'RDM' then
-
         if RDM_Get_Mode then
             return RDM_Get_Mode()
         end
     end
 
-
     --------------------------------------------------------
-    -- Generic profile fallback.
+    -- Other jobs use the profile's explicit solo_mode.
     --------------------------------------------------------
 
     if active_profile
@@ -524,192 +508,139 @@ end
 ------------------------------------------------------------
 
 function Try_Solo_Nuke()
-
-    --------------------------------------------------------
-    -- Need a profile.
-    --------------------------------------------------------
-
     if not active_profile then
         return false
     end
-
-
-    --------------------------------------------------------
-    -- Need solo spells.
-    --------------------------------------------------------
 
     if not active_profile.solo_spells then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Determine mode.
+    -- BLM / RDM use their own SOLO/BURST mode functions.
     --------------------------------------------------------
 
     if current_job == 'BLM'
         or current_job == 'RDM'
     then
-
         if Get_Magic_Mode() ~= 'SOLO' then
             return false
         end
 
-    elseif active_profile.solo_mode ~= true then
+    --------------------------------------------------------
+    -- Other jobs must explicitly enable solo mode.
+    --------------------------------------------------------
 
+    elseif active_profile.solo_mode ~= true then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Don't interrupt another action.
+    -- Absolute casting/movement lock.
     --------------------------------------------------------
 
     if not Can_Cast() then
         return false
     end
 
-
-    --------------------------------------------------------
-    -- Target.
-    --------------------------------------------------------
-
-    local target =
-        Get_Magic_Target()
+    local target = Get_Magic_Target()
 
     if not target then
         return false
     end
 
-
-    --------------------------------------------------------
-    -- Player.
-    --------------------------------------------------------
-
-    local player =
-        windower.ffxi.get_player()
+    local player = windower.ffxi.get_player()
 
     if not player then
         return false
     end
 
-
-    --------------------------------------------------------
-    -- Recasts.
-    --------------------------------------------------------
-
-    local recasts =
-        windower.ffxi.get_spell_recasts()
+    local recasts = windower.ffxi.get_spell_recasts()
 
     if not recasts then
         return false
     end
 
-
     --------------------------------------------------------
-    -- Try strongest -> weakest.
+    -- Solo spells are ordered strongest -> weakest by the
+    -- job profile.
     --------------------------------------------------------
 
     for _, spell_name in ipairs(active_profile.solo_spells) do
-
-        local spell =
-            res.spells:with(
-                'name',
-                spell_name
-            )
-
-        if spell then
-
-            local recast =
-                recasts[spell.id]
-
-            if recast == 0
-                and player.vitals.mp >= spell.mp_cost
-            then
-
-                return Cast_Magic_Spell(
-                    spell_name
-                )
-            end
+        if Spell_Is_Available(
+            spell_name,
+            player,
+            recasts
+        ) then
+            return Cast_Magic_Spell(spell_name)
         end
     end
-
 
     return false
 end
 
 
 ------------------------------------------------------------
--- SKILLCHAIN / MAGIC MONITOR
+-- MAGIC BURST MONITOR
 ------------------------------------------------------------
 --
--- This is the active engine.
+-- IMPORTANT ORDER:
 --
--- BLM:
+--   1. If a burst is available, BURST FIRST.
+--   2. Only perform solo nukes when the job is actually in
+--      SOLO mode.
 --
---   SOLO  -> repeatedly nuke
---   BURST -> wait for SC and burst
+-- This prevents a normal nuke from stealing an opportunity
+-- that should have been a Magic Burst.
 --
--- RDM:
---
---   SOLO  -> repeatedly nuke
---   BURST -> wait for SC and burst
---
--- Other jobs:
---
---   Uses their profile's solo_mode / magic_burst settings.
+-- Lazy.lua owns SC_Monitor().
+-- This function does NOT overwrite SC_Monitor().
 ------------------------------------------------------------
 
-function SC_Monitor()
-
+function MagicBurst_Monitor()
     while Start_Engine do
 
         ----------------------------------------------------
-        -- Don't interfere with another action.
+        -- Never attempt another action while casting,
+        -- busy, or resting.
         ----------------------------------------------------
 
         if isCasting
             or isBusy > 0
+            or mp_resting
         then
-
             coroutine.sleep(0.2)
 
         else
 
             ------------------------------------------------
-            -- SOLO MODE
+            -- BURST FIRST.
+            --
+            -- If we're inside an MB window, this gets first
+            -- chance to act.
             ------------------------------------------------
 
-            local solo_done =
-                Try_Solo_Nuke()
+            local burst_done = Try_Magic_Burst()
 
-            if solo_done then
-
-                coroutine.sleep(
-                    Action_Delay
-                )
+            if burst_done then
+                coroutine.sleep(Action_Delay)
 
             else
 
                 ------------------------------------------------
-                -- MAGIC BURST MODE
+                -- No burst available.
+                --
+                -- This is where SOLO mode may nuke.
                 ------------------------------------------------
 
-                local burst_done =
-                    Try_Magic_Burst()
+                local solo_done = Try_Solo_Nuke()
 
-                if burst_done then
-
-                    coroutine.sleep(
-                        Action_Delay
-                    )
-
+                if solo_done then
+                    coroutine.sleep(Action_Delay)
                 else
-
                     coroutine.sleep(0.2)
                 end
             end
         end
     end
 end
-
