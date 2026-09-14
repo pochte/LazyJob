@@ -53,6 +53,24 @@ JOB_PROFILES.SCH = {
     },
 
     --------------------------------------------------------
+    -- TARGET DISPEL
+    --
+    -- Dispel is only in the book while in Dark Arts, same as the
+    -- magic burst gate above. The book switch itself is handled by
+    -- the separate grimoire script -- this just waits for it.
+    --------------------------------------------------------
+
+    dispel = {
+        spell = 'Dispel',
+        require_buff = 'Dark Arts',
+        interval = 3, -- seconds, not minutes (unlike every other interval above)
+        targets = {
+            'Rhino Guard',
+            'Bubble Curtain',
+        },
+    },
+
+    --------------------------------------------------------
     -- CURE BOT
     --
     -- Backup healer when no WHM is in the party, but only actually

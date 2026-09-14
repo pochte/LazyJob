@@ -109,6 +109,7 @@ local self_buff_last_cast    = {}
 local self_ability_last_cast = {}
 local haste_last_cast        = {}
 local debuff_last_cast       = {}
+local dispel_last_cast       = {}
 local refresh_last_cast      = {}
 local party_buff_last_cast   = {}
 local entrust_last_cast      = {}
@@ -223,6 +224,7 @@ function Update_Job_Profile()
     self_ability_last_cast = {}
     haste_last_cast        = {}
     debuff_last_cast       = {}
+    dispel_last_cast       = {}
     refresh_last_cast      = {}
     party_buff_last_cast   = {}
     entrust_last_cast      = {}
@@ -1476,6 +1478,55 @@ function Buff_Tick()
 
                             return
                         end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 1B. DISPEL
+    --
+    -- Reactive rather than interval-driven: fires as soon as the
+    -- target actually has one of the watched buffs up, instead of
+    -- waiting on a timer like self_buffs/debuffs do. `dispel.interval`
+    -- is a short cooldown in seconds (not minutes) purely to stop
+    -- re-attempting every tick on a resist -- the real gate is
+    -- whether the buff is still on the target.
+    --
+    -- BLM/SCH only has Dispel while Dark Arts is open. Lazy doesn't
+    -- force that book switch itself -- the grimoire script handles it
+    -- on its own -- this just waits until require_buff is already true.
+    if active_profile.dispel then
+        local dispel_cfg = active_profile.dispel
+        local dispel_ok  = true
+
+        if dispel_cfg.require_buff and not buffactive[dispel_cfg.require_buff] then
+            dispel_ok = false
+        end
+
+        local last     = dispel_last_cast[dispel_cfg.spell]
+        local interval = dispel_cfg.interval or 3
+
+        if dispel_ok and (not last or now - last >= interval) then
+            local target = windower.ffxi.get_mob_by_target('t')
+
+            if target and target.hpp and target.hpp > 0 and not Is_Blacklisted(target.name) then
+                local target_buffs = convert_buff_list(target.buffs)
+
+                for _, buff_name in ipairs(dispel_cfg.targets or {}) do
+                    if target_buffs[buff_name] then
+                        local spell = res.spells:with('name', dispel_cfg.spell)
+                        if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
+                            windower.add_to_chat(207, '[Lazy] ' .. target.name .. ' has ' .. buff_name .. ' -- casting ' .. dispel_cfg.spell .. '.')
+                            pending_cast = {
+                                store    = dispel_last_cast,
+                                key      = dispel_cfg.spell,
+                                spell_id = spell.id,
+                                sent_at  = now,
+                            }
+                            return
+                        end
+                        break
                     end
                 end
             end

@@ -30,6 +30,24 @@ JOB_PROFILES.WHM = {
     },
 
     --------------------------------------------------------
+    -- TARGET DISPEL
+    --
+    -- Dispel needs Dark Arts (WHM/SCH sub); the book switch itself
+    -- is handled by the separate grimoire script -- this just waits
+    -- for it.
+    --------------------------------------------------------
+
+    dispel = {
+        spell = 'Dispel',
+        require_buff = 'Dark Arts',
+        interval = 3, -- seconds, not minutes (unlike every other interval above)
+        targets = {
+            'Rhino Guard',
+            'Bubble Curtain',
+        },
+    },
+
+    --------------------------------------------------------
     -- CURE BOT
     --------------------------------------------------------
 

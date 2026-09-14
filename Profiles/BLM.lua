@@ -1,4 +1,3 @@
-
 ------------------------------------------------------------
 -- BLM JOB PROFILE
 ------------------------------------------------------------
@@ -51,7 +50,7 @@ JOB_PROFILES.BLM = {
 --------------------------------------------------------
 
 self_buffs = {
-    {name = {'Windstorm'}, interval = 3, party_only = true, require_buff = 'Dark Arts'},
+    {name = {'Firestorm'}, interval = 3, party_only = true, require_buff = 'Dark Arts'},
     {name = {'Klimaform'}, interval = 3},
 },
 
@@ -65,6 +64,23 @@ self_abilities = {
     {name = 'Mana Well', interval = 3},
 },
     --------------------------------------------------------
+    -- DISPEL (via SCH sub / Dark Arts grimoire)
+    --------------------------------------------------------
+    -- Dispel is only in the book while Dark Arts is active; the book
+    -- switch itself is handled by the separate grimoire script, this
+    -- just gates the cast on that buff being up.
+
+    dispel = {
+        spell = 'Dispel',
+        require_buff = 'Dark Arts', -- book manager handles the switch; this just waits for it
+        interval = 3, -- seconds, not minutes (unlike every other interval below)
+        targets = {
+            'Rhino Guard',
+            'Bubble Curtain',
+        },
+    },
+
+    --------------------------------------------------------
     -- MAGIC BURST
     --------------------------------------------------------
 
@@ -72,9 +88,9 @@ self_abilities = {
 
     -- Checked in this order. Aero is always preferred over Fire.
     burst_priority = {
+        'Blizzard',
         'Aero',
         'Fire',
-        'Blizzard',
         'Stone',
         'Thunder',
         'Water',
@@ -102,4 +118,3 @@ self_abilities = {
         {min_missing = 801, max_missing = 999999, spells = {'Cure IV', 'Cure III'}},
     },
 }
-

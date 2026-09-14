@@ -43,6 +43,15 @@ JOB_PROFILES.RDM = {
         { name = 'Haste Samba', interval = 1 },
     },
 
+    dispel = {
+        spell = 'Dispel',
+        interval = 3, -- seconds, not minutes (unlike every other interval below)
+        targets = {
+            'Rhino Guard',
+            'Bubble Curtain',
+        },
+    },
+
     magic_burst = true,
 
     burst_spells = {
