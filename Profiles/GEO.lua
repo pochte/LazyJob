@@ -27,6 +27,11 @@ JOB_PROFILES.GEO = {
         },
     },
 
+    dispel = {
+        spell = 'Dispel',
+        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+    },
+
     magic_burst = true,
 
     burst_spells = {

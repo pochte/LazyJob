@@ -45,11 +45,7 @@ JOB_PROFILES.RDM = {
 
     dispel = {
         spell = 'Dispel',
-        interval = 3, -- seconds, not minutes (unlike every other interval below)
-        targets = {
-            'Rhino Guard',
-            'Bubble Curtain',
-        },
+        interval = 20, -- seconds; blind safety cast, not gated on buff detection
     },
 
     magic_burst = true,

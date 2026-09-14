@@ -22,6 +22,7 @@ needed_buffs  = needed_buffs or {}
 food          = food or nil
 spell_blacklist = spell_blacklist or {}
 haste_blacklist = haste_blacklist or {}
+dispel_whitelist = dispel_whitelist or {}
 subjob_abilities = subjob_abilities or {}
 haste_samba_active = haste_samba_active or false
 
@@ -110,6 +111,7 @@ local self_ability_last_cast = {}
 local haste_last_cast        = {}
 local debuff_last_cast       = {}
 local dispel_last_cast       = {}
+local mob_spell_last_cast    = {}
 local refresh_last_cast      = {}
 local party_buff_last_cast   = {}
 local entrust_last_cast      = {}
@@ -225,6 +227,7 @@ function Update_Job_Profile()
     haste_last_cast        = {}
     debuff_last_cast       = {}
     dispel_last_cast       = {}
+    mob_spell_last_cast    = {}
     refresh_last_cast      = {}
     party_buff_last_cast   = {}
     entrust_last_cast      = {}
@@ -1347,6 +1350,18 @@ function Is_Haste_Blacklisted(name)
     return false
 end
 
+-- Unlike the blacklists above (exact match), this is a substring
+-- match -- so a whitelist entry like 'Beetle' covers every named
+-- Beetle mob without needing each one listed individually.
+function Is_Dispel_Whitelisted(name)
+    if not name then return false end
+    local lname = string.lower(name)
+    for _, entry in ipairs(dispel_whitelist or {}) do
+        if string.find(lname, string.lower(entry), 1, true) then return true end
+    end
+    return false
+end
+
 function Can_Cast_Spell(spell_name)
     if not spell_name or spell_name == '' then return false end
     local spell = res.spells:with('name', spell_name)
@@ -1486,16 +1501,21 @@ function Buff_Tick()
 
     -- 1B. DISPEL
     --
-    -- Reactive rather than interval-driven: fires as soon as the
-    -- target actually has one of the watched buffs up, instead of
-    -- waiting on a timer like self_buffs/debuffs do. `dispel.interval`
-    -- is a short cooldown in seconds (not minutes) purely to stop
-    -- re-attempting every tick on a resist -- the real gate is
-    -- whether the buff is still on the target.
+    -- Was gated on detecting Rhino Guard/Bubble Curtain on the
+    -- target via target.buffs, but that doesn't populate reliably,
+    -- so it was silently missing good windows. Simplified to a plain
+    -- safety-net interval cast instead -- if there's nothing to
+    -- strip it's a wasted cast, not a harmful one.
     --
-    -- BLM/SCH only has Dispel while Dark Arts is open. Lazy doesn't
-    -- force that book switch itself -- the grimoire script handles it
-    -- on its own -- this just waits until require_buff is already true.
+    -- Restricted to settings.lua's dispel_whitelist -- substring
+    -- match against the target's name, case-insensitive, same idea
+    -- as spell_blacklist/haste_blacklist. Edit that one list to add
+    -- or remove mobs; no job profile needs touching.
+    --
+    -- BLM/SCH/WHM only has Dispel while Dark Arts is open. Lazy
+    -- doesn't force that book switch itself -- the grimoire script
+    -- handles it on its own -- this just waits until require_buff is
+    -- already true.
     if active_profile.dispel then
         local dispel_cfg = active_profile.dispel
         local dispel_ok  = true
@@ -1505,28 +1525,62 @@ function Buff_Tick()
         end
 
         local last     = dispel_last_cast[dispel_cfg.spell]
-        local interval = dispel_cfg.interval or 3
+        local interval = dispel_cfg.interval or 20
 
         if dispel_ok and (not last or now - last >= interval) then
             local target = windower.ffxi.get_mob_by_target('t')
 
-            if target and target.hpp and target.hpp > 0 and not Is_Blacklisted(target.name) then
-                local target_buffs = convert_buff_list(target.buffs)
+            if target and target.name and target.hpp and target.hpp > 0
+                and not Is_Blacklisted(target.name)
+                and Is_Dispel_Whitelisted(target.name)
+            then
+                local spell = res.spells:with('name', dispel_cfg.spell)
+                if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
+                    windower.add_to_chat(207, '[Lazy] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
+                    pending_cast = {
+                        store    = dispel_last_cast,
+                        key      = dispel_cfg.spell,
+                        spell_id = spell.id,
+                        sent_at  = now,
+                    }
+                    return
+                end
+            end
+        end
+    end
 
-                for _, buff_name in ipairs(dispel_cfg.targets or {}) do
-                    if target_buffs[buff_name] then
-                        local spell = res.spells:with('name', dispel_cfg.spell)
-                        if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
-                            windower.add_to_chat(207, '[Lazy] ' .. target.name .. ' has ' .. buff_name .. ' -- casting ' .. dispel_cfg.spell .. '.')
-                            pending_cast = {
-                                store    = dispel_last_cast,
-                                key      = dispel_cfg.spell,
-                                spell_id = spell.id,
-                                sent_at  = now,
-                            }
-                            return
+    -- 1C. MOB-SPECIFIC SPELLS
+    --
+    -- Fires a spell (with tiered fallback) only while a specific
+    -- named mob is targeted -- e.g. spamming Aspir on an MP-draining
+    -- mob whenever the recast is up. `interval` here is just a short
+    -- debounce; the real gate is the spell's own recast via
+    -- Cast_Spell_On, same as everywhere else in this file.
+    if active_profile.mob_spells then
+        local target = windower.ffxi.get_mob_by_target('t')
+
+        if target and target.name and target.hpp and target.hpp > 0 then
+            for _, entry in ipairs(active_profile.mob_spells) do
+                if string.lower(target.name) == string.lower(entry.mob_name) then
+                    local names = type(entry.names) == 'table' and entry.names or {entry.names}
+                    local key   = 'mobspell:' .. entry.mob_name .. ':' .. names[1]
+
+                    local last     = mob_spell_last_cast[key]
+                    local interval = entry.interval or 1
+
+                    if not last or now - last >= interval then
+                        for _, name in ipairs(names) do
+                            local spell = res.spells:with('name', name)
+                            if spell and Cast_Spell_On(name, entry.target or '<t>') then
+                                pending_cast = {
+                                    store    = mob_spell_last_cast,
+                                    key      = key,
+                                    spell_id = spell.id,
+                                    sent_at  = now,
+                                }
+                                return
+                            end
                         end
-                        break
                     end
                 end
             end

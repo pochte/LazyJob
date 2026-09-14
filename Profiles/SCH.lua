@@ -63,11 +63,7 @@ JOB_PROFILES.SCH = {
     dispel = {
         spell = 'Dispel',
         require_buff = 'Dark Arts',
-        interval = 3, -- seconds, not minutes (unlike every other interval above)
-        targets = {
-            'Rhino Guard',
-            'Bubble Curtain',
-        },
+        interval = 20, -- seconds; blind safety cast, not gated on buff detection
     },
 
     --------------------------------------------------------

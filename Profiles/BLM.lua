@@ -73,10 +73,20 @@ self_abilities = {
     dispel = {
         spell = 'Dispel',
         require_buff = 'Dark Arts', -- book manager handles the switch; this just waits for it
-        interval = 3, -- seconds, not minutes (unlike every other interval below)
-        targets = {
-            'Rhino Guard',
-            'Bubble Curtain',
+        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+    },
+
+    --------------------------------------------------------
+    -- MOB-SPECIFIC SPELLS
+    --------------------------------------------------------
+    -- Locus Armet Beetle drains MP hard -- spam Aspir back at it,
+    -- highest tier available, whenever the recast is up.
+
+    mob_spells = {
+        {
+            mob_name = 'Locus Armet Beetle',
+            names = {'Aspir III', 'Aspir II', 'Aspir'},
+            interval = 1, -- seconds, just a debounce; the spell's own recast is the real gate
         },
     },
 
