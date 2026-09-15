@@ -634,7 +634,17 @@ windower.register_event('addon command', function(...)
         damage_watch_target_id = nil
         party_activity = {}
         temp_assist_mob_id = nil
-        autotarget_was_off = false
+
+        -- STUPIDITY FIXER: autotarget getting left off (forgotten after
+        -- testing, fat-fingered, whatever) means Lazy just sits there
+        -- doing nothing forever with no other symptom. Checked once
+        -- here, at startup -- there's no meaningful "start of a fight"
+        -- to hook this on, since a fight can't start via autotarget in
+        -- the first place while autotarget's off.
+        if not settings.autotarget then
+            settings.autotarget = true
+            windower.add_to_chat(207, '[Lazy] Autotarget was off -- turned it back on.')
+        end
 
         Update_Job_Profile()
         Snapshot_Trusts()
@@ -1134,27 +1144,9 @@ function Target_Monitor()
     end
 end
 
-local autotarget_was_off = false
-
 function Targeting()
     while Start_Engine do
         local player = windower.ffxi.get_player()
-
-        -- STUPIDITY FIXER: autotarget getting left off (forgotten after
-        -- testing, fat-fingered, whatever) means Lazy just sits there
-        -- doing nothing forever with no other symptom. Force it back on
-        -- unconditionally -- there's no legitimate reason to want it off
-        -- while the addon's running. One chat line per incident, not
-        -- spammed every tick.
-        if not settings.autotarget then
-            settings.autotarget = true
-            if not autotarget_was_off then
-                windower.add_to_chat(207, '[Lazy] Autotarget was off -- turned it back on.')
-                autotarget_was_off = true
-            end
-        else
-            autotarget_was_off = false
-        end
 
         if player and player.status ~= 1 then
             if settings.assist ~= '' then
