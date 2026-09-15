@@ -1,3 +1,4 @@
+--GEO JOB PROFILE 
 JOB_PROFILES.GEO = {
     auto_engage = false,
     use_weaponskills = false,
@@ -29,7 +30,7 @@ JOB_PROFILES.GEO = {
 
     dispel = {
         spell = 'Dispel',
-        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+        interval = 20,        
     },
 
     magic_burst = true,

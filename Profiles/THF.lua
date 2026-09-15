@@ -1,11 +1,9 @@
-------------------------------------------------------------
--- THF JOB PROFILE
-------------------------------------------------------------
+    
+-- THF JOB PROFILE 
 --
 -- Thief -- weaponskill skillchain settings, needed buffs before WS.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.THF
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.THF 
 
 JOB_PROFILES.THF = {
 

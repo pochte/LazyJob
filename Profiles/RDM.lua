@@ -45,7 +45,7 @@ JOB_PROFILES.RDM = {
 
     dispel = {
         spell = 'Dispel',
-        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+        interval = 20,        
     },
 
     magic_burst = true,

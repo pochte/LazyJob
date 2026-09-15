@@ -79,10 +79,8 @@ local sc_info = {
         Detonation={1,'Detonation'}, lvl=1
     },
 }
-
-------------------------------------------------------------
--- SKILLCHAIN MESSAGE IDS
-------------------------------------------------------------
+ 
+-- SKILLCHAIN MESSAGE IDS 
 
 local skillchain_ids = {
     [288]=true,[289]=true,[290]=true,[291]=true,[292]=true,[293]=true,[294]=true,[295]=true,
@@ -91,19 +89,15 @@ local skillchain_ids = {
     [393]=true,[394]=true,[395]=true,[396]=true,[397]=true,
     [767]=true,[768]=true,[769]=true,[770]=true,
 }
-
-------------------------------------------------------------
--- ACTION MESSAGE IDS
-------------------------------------------------------------
+ 
+-- ACTION MESSAGE IDS 
 
 local message_ids = {
     [110]=true,[185]=true,[187]=true,[317]=true,[802]=true,
 }
-
-------------------------------------------------------------
+ 
 -- ACTION CATEGORIES THAT CAN CREATE
--- SKILLCHAIN RESONANCE
-------------------------------------------------------------
+-- SKILLCHAIN RESONANCE 
 
 local ws_categories = {
     weaponskill_finish=true,
@@ -113,8 +107,7 @@ local ws_categories = {
     avatar_tp_finish=true,
     pet_tp_finish=true,
 }
-
-------------------------------------------------------------
+ 
 -- ACTIVE SKILLCHAINS
 --
 -- target_id ->
@@ -124,15 +117,12 @@ local ws_categories = {
 --     times  = timestamp,
 --     step   = number,
 --     closed = boolean,
--- }
-------------------------------------------------------------
+-- } 
 
 local resonating = {}
-
-------------------------------------------------------------
+ 
 -- CHECK WHETHER TWO SETS OF SC PROPERTIES
--- CAN COMBINE
-------------------------------------------------------------
+-- CAN COMBINE 
 
 local function check_props(old,new)
     for k=1,#old do
@@ -157,10 +147,8 @@ local function check_props(old,new)
         end
     end
 end
-
-------------------------------------------------------------
--- CREATE / UPDATE ACTIVE SC
-------------------------------------------------------------
+ 
+-- CREATE / UPDATE ACTIVE SC 
 
 local function apply_properties(target,active,delay,step,closed)
     local clock=os.clock()
@@ -173,15 +161,13 @@ local function apply_properties(target,active,delay,step,closed)
         closed=closed or false,
     }
 end
-
-------------------------------------------------------------
+ 
 -- TRUE WHEN SC WINDOW EXISTS
 --
 -- This includes both:
 --
 -- RED  "Wait"
--- GREEN "Go!"
-------------------------------------------------------------
+-- GREEN "Go!" 
 
 function sc_active(target_id)
     local reson=resonating[target_id]
@@ -204,11 +190,9 @@ function sc_active(target_id)
 
     return true
 end
-
-------------------------------------------------------------
+ 
 -- TRUE WHEN SC WINDOW IS IN THE
--- GREEN "GO!" / BURST PHASE
-------------------------------------------------------------
+-- GREEN "GO!" / BURST PHASE 
 
 function sc_ready(target_id)
     local reson=resonating[target_id]
@@ -231,8 +215,7 @@ function sc_ready(target_id)
 
     return now >= reson.delay
 end
-
-------------------------------------------------------------
+ 
 -- GET CURRENT SKILLCHAIN PROPERTY
 --
 -- Examples:
@@ -246,8 +229,7 @@ end
 --     etc.
 --
 -- This is used by the magic-burst logic
--- in lazy.lua.
-------------------------------------------------------------
+-- in lazy.lua. 
 
 function sc_get_property(target_id)
     local reson=resonating[target_id]
@@ -274,8 +256,7 @@ function sc_get_property(target_id)
 
     return reson.active[1]
 end
-
-------------------------------------------------------------
+ 
 -- GET SKILLCHAIN'S COMPONENT ELEMENTS
 --
 -- sc_get_property() above only returns the skillchain's own
@@ -289,8 +270,7 @@ end
 -- Light magic. This returns that list (in the same priority
 -- order sc_info defines it, which is highest-bonus-first), so
 -- magicburst.lua can try every element the chain actually
--- supports instead of guessing a single one.
-------------------------------------------------------------
+-- supports instead of guessing a single one. 
 
 function sc_get_elements(target_id)
     local sc_name=sc_get_property(target_id)
@@ -313,10 +293,8 @@ function sc_get_elements(target_id)
 
     return elements
 end
-
-------------------------------------------------------------
--- GET MAIN WEAPON NAME
-------------------------------------------------------------
+ 
+-- GET MAIN WEAPON NAME 
 
 local function get_main_weapon_name()
     local items=windower.ffxi.get_items()
@@ -341,10 +319,8 @@ local function get_main_weapon_name()
 
     return res_item and res_item.en or ''
 end
-
-------------------------------------------------------------
--- GET SKILLCHAIN PROPERTIES FOR A WS
-------------------------------------------------------------
+ 
+-- GET SKILLCHAIN PROPERTIES FOR A WS 
 
 local function get_sc_props(skill,weapon_name)
     if skill.aeonic and skill.weapon == weapon_name then
@@ -360,11 +336,9 @@ local function get_sc_props(skill,weapon_name)
 
     return skill.skillchain
 end
-
-------------------------------------------------------------
+ 
 -- GET AVAILABLE WS THAT CAN CLOSE
--- THE CURRENT SKILLCHAIN
-------------------------------------------------------------
+-- THE CURRENT SKILLCHAIN 
 
 function sc_get_ws(target_id)
     local reson=resonating[target_id]
@@ -393,10 +367,8 @@ function sc_get_ws(target_id)
 
     return result
 end
-
-------------------------------------------------------------
--- ACTION PACKET HANDLER
-------------------------------------------------------------
+ 
+-- ACTION PACKET HANDLER 
 
 local function action_handler(act)
     local ap=ActionPacket.new(act)
@@ -425,10 +397,8 @@ local function action_handler(act)
 
     local ability=skills[resource] and skills[resource][action_id]
 
-    --------------------------------------------------------
-    -- NEW SKILLCHAIN FORMED
-    --------------------------------------------------------
-
+       -- NEW SKILLCHAIN FORMED
+   
     if add_effect and skillchain_ids[add_effect.message_id] then
         local sc_name=add_effect.animation:ucfirst()
         local sc_data=sc_info[sc_name]
@@ -446,10 +416,8 @@ local function action_handler(act)
             closed
         )
 
-    --------------------------------------------------------
-    -- INITIAL WEAPONSKILL / ABILITY
-    --------------------------------------------------------
-
+       -- INITIAL WEAPONSKILL / ABILITY
+   
     elseif ability and message_ids[message_id] then
         local props=ability.skillchain
 
@@ -466,10 +434,8 @@ local function action_handler(act)
         )
     end
 end
-
-------------------------------------------------------------
--- ACTION PACKET LISTENER
-------------------------------------------------------------
+ 
+-- ACTION PACKET LISTENER 
 
 ActionPacket.open_listener(function(act)
     local ok,err=pcall(action_handler,act)
@@ -481,10 +447,8 @@ ActionPacket.open_listener(function(act)
         )
     end
 end)
-
-------------------------------------------------------------
--- CLEAN UP EXPIRED SKILLCHAINS
-------------------------------------------------------------
+ 
+-- CLEAN UP EXPIRED SKILLCHAINS 
 
 local prerender_next=0
 

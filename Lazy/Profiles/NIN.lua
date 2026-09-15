@@ -1,11 +1,9 @@
-------------------------------------------------------------
--- NIN JOB PROFILE
-------------------------------------------------------------
+    
+-- NIN JOB PROFILE 
 --
 -- Ninja -- Frontline melee, magic bursts during skillchains.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.NIN
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.NIN 
 
 JOB_PROFILES.NIN = {
 

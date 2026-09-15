@@ -1,15 +1,11 @@
 require('chat')
 require('logger')
 require('tables')
-
-config  = require('config')
-res     = require('resources')
+config = require('config')
+res = require('resources')
 packets = require('packets')
-
-
-------------------------------------------------------------
--- MODULES & FALLBACK DEFINITIONS
-------------------------------------------------------------
+ 
+-- MODULES & FALLBACK DEFINITIONS 
 
 dofile(windower.addon_path .. 'skillchain.lua')
 dofile(windower.addon_path .. 'magicburst.lua')
@@ -18,8 +14,8 @@ dofile(windower.addon_path .. 'settings.lua')
 -- Fallback structures to prevent nil comparison errors
 ws_sc_starter = ws_sc_starter or {}
 ws_sc_closers = ws_sc_closers or {}
-needed_buffs  = needed_buffs or {}
-food          = food or nil
+needed_buffs = needed_buffs or {}
+food = food or nil
 spell_blacklist = spell_blacklist or {}
 haste_blacklist = haste_blacklist or {}
 dispel_whitelist = dispel_whitelist or {}
@@ -32,61 +28,50 @@ targeting = targeting or {
     within_origin = true,
     only_unclaimed = true,
 }
+ 
+-- ADDON 
 
-------------------------------------------------------------
--- ADDON
-------------------------------------------------------------
-
-_addon.name     = 'lazy'
-_addon.author   = 'Ulli'
-_addon.version  = '0.9'
+_addon.name = 'lazy'
+_addon.author = 'Ulli'
+_addon.version = '0.9'
 _addon.commands = {'lazy'}
-
-
-------------------------------------------------------------
--- GLOBAL STATE
-------------------------------------------------------------
+ 
+-- GLOBAL STATE 
 
 Start_Engine = false
-isCasting    = false
-isBusy       = 0
-buffactive   = {}
+isCasting = false
+isBusy = 0
+buffactive = {}
 Action_Delay = 2
+ 
+-- MOVEMENT / POSITION 
 
-
-------------------------------------------------------------
--- MOVEMENT / POSITION
-------------------------------------------------------------
-
-local origin_x          = nil
-local origin_y          = nil
-local origin_z          = nil
-local origin_radius     = 15
+local origin_x = nil
+local origin_y = nil
+local origin_z = nil
+local origin_radius = 15
 local origin_z_tolerance = 15
 local pathing_to_origin = false
-local path_tick         = 0
-local last_known_pos    = nil
-local move_threshold    = 0.05
+local path_tick = 0
+local last_known_pos = nil
+local move_threshold = 0.05
 
-local path_last_distance      = nil
+local path_last_distance = nil
 local path_last_progress_time = nil
-local path_stuck_alerted      = false
-local PATH_STUCK_TIMEOUT      = 8
-local PATH_STUCK_EPSILON      = 1
+local path_stuck_alerted = false
+local PATH_STUCK_TIMEOUT = 8
+local PATH_STUCK_EPSILON = 1
 
-local origin_unreachable_since   = nil
+local origin_unreachable_since = nil
 local ORIGIN_UNREACHABLE_TIMEOUT = 600
-
-
-------------------------------------------------------------
--- COMBAT STATE
-------------------------------------------------------------
+ 
+-- COMBAT STATE 
 
 local trust_ws_countdown = 0
-local lockon_done        = false
-local ws_index           = 1
-local PlayerH            = 0
-local engaged_since      = nil
+local lockon_done = false
+local ws_index = 1
+local PlayerH = 0
+local engaged_since = nil
 
 -- DNC: set true whenever any weaponskill fires (Combat's starter/closer,
 -- or SC_Monitor's closer), so Try_DNC_Actions knows to fire Reverse
@@ -100,36 +85,26 @@ local DNC_WALTZ_TIERS = {
     'Curing Waltz II',
     'Curing Waltz',
 }
+ 
+-- CAST TRACKING 
 
-
-------------------------------------------------------------
--- CAST TRACKING
-------------------------------------------------------------
-
-local self_buff_last_cast    = {}
+local self_buff_last_cast = {}
 local self_ability_last_cast = {}
-local haste_last_cast        = {}
-local debuff_last_cast       = {}
-local dispel_last_cast       = {}
-local mob_spell_last_cast    = {}
-local refresh_last_cast      = {}
-local party_buff_last_cast   = {}
-local entrust_last_cast      = {}
-
+local haste_last_cast = {}
+local debuff_last_cast = {}
+local dispel_last_cast = {}
+local mob_spell_last_cast = {}
+local refresh_last_cast = {}
+local party_buff_last_cast = {}
+local entrust_last_cast = {}
 local pending_cast = nil
+ 
+-- JOB STATE 
 
-
-------------------------------------------------------------
--- JOB STATE
-------------------------------------------------------------
-
-current_job    = nil
+current_job = nil
 active_profile = nil
-
-
-------------------------------------------------------------
--- JOB PROFILES
-------------------------------------------------------------
+ 
+-- JOB PROFILES 
 
 JOB_PROFILES = {}
 
@@ -155,11 +130,8 @@ end
 
 JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
-
-
-------------------------------------------------------------
--- BACKLINE & DISENGAGE OVERRIDES
-------------------------------------------------------------
+ 
+-- BACKLINE & DISENGAGE OVERRIDES 
 
 local function Enforce_Backline_Rules()
     local player = windower.ffxi.get_player()
@@ -177,15 +149,11 @@ local function Ensure_Debuff_Target()
     if (active_profile.debuffs or active_profile.magic_burst)
        and active_profile.auto_engage == false
        and not windower.ffxi.get_mob_by_target('t') then
-       
         windower.send_command('input /target <p1>; wait 0.2; input /target <bt>')
     end
 end
-
-
-------------------------------------------------------------
--- MOVEMENT DETECTION
-------------------------------------------------------------
+ 
+-- MOVEMENT DETECTION 
 
 function Is_Moving()
     local player = windower.ffxi.get_player()
@@ -206,11 +174,8 @@ function Is_Moving()
     last_known_pos = { x = mob.x, y = mob.y }
     return moving
 end
-
-
-------------------------------------------------------------
--- JOB PROFILE
-------------------------------------------------------------
+ 
+-- JOB PROFILE 
 
 function Update_Job_Profile()
     local player = windower.ffxi.get_player()
@@ -219,26 +184,23 @@ function Update_Job_Profile()
     local job = player.main_job
     if job == current_job then return end
 
-    current_job    = job
+    current_job = job
     active_profile = JOB_PROFILES[job] or JOB_PROFILES.DEFAULT
 
-    self_buff_last_cast    = {}
+    self_buff_last_cast = {}
     self_ability_last_cast = {}
-    haste_last_cast        = {}
-    debuff_last_cast       = {}
-    dispel_last_cast       = {}
-    mob_spell_last_cast    = {}
-    refresh_last_cast      = {}
-    party_buff_last_cast   = {}
-    entrust_last_cast      = {}
+    haste_last_cast = {}
+    debuff_last_cast = {}
+    dispel_last_cast = {}
+    mob_spell_last_cast = {}
+    refresh_last_cast = {}
+    party_buff_last_cast = {}
+    entrust_last_cast = {}
 
     windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
 end
-
-
-------------------------------------------------------------
--- PROFILE HELPERS
-------------------------------------------------------------
+ 
+-- PROFILE HELPERS 
 
 function Get_WS_Starter()
     return active_profile and active_profile.ws_sc_starter or ws_sc_starter
@@ -255,30 +217,24 @@ end
 function Get_Food()
     return active_profile and active_profile.food or food
 end
-
-
-------------------------------------------------------------
--- SETTINGS
-------------------------------------------------------------
+ 
+-- SETTINGS 
 
 defaults = {
-    spell              = '',
-    spell_active       = false,
-    weaponskill        = '',
+    spell = '',
+    spell_active = false,
+    weaponskill = '',
     weaponskill_active = false,
-    autotarget         = false,
-    target             = '',
-    assist             = '',
-    buffs_active       = true,
-    cure_active        = true,
+    autotarget = false,
+    target = '',
+    assist = '',
+    buffs_active = true,
+    cure_active = true,
 }
 
 settings = config.load(defaults)
-
-
-------------------------------------------------------------
--- INCOMING PACKETS
-------------------------------------------------------------
+ 
+-- INCOMING PACKETS 
 
 windower.register_event('incoming chunk', function(id, data)
     if id ~= 0x028 then return end
@@ -290,14 +246,13 @@ windower.register_event('incoming chunk', function(id, data)
     if action.Category == 4 then
         isCasting = false
         if pending_cast then
-            local matches  = action.Param == pending_cast.spell_id
+            local matches = action.Param == pending_cast.spell_id
             local reaction = action['Target 1 Action 1 Reaction']
             if matches and reaction == 0 then
                 pending_cast.store[pending_cast.key] = pending_cast.sent_at
             end
             pending_cast = nil
         end
-
     elseif action.Category == 8 then
         isCasting = true
         if action['Target 1 Action 1 Message'] == 0 then
@@ -305,28 +260,24 @@ windower.register_event('incoming chunk', function(id, data)
             isBusy = Action_Delay
             pending_cast = nil
         end
-
     elseif action.Category == 11 then
         trust_ws_countdown = 5
     end
 end)
+ 
+-- DEATH WATCH 
 
-
-------------------------------------------------------------
--- DEATH WATCH
-------------------------------------------------------------
-
-local last_damage_source    = nil
+local last_damage_source = nil
 local last_damage_source_id = nil
-local last_damage_kind      = nil
-local death_reported        = false
+local last_damage_kind = nil
+local death_reported = false
 
 -- Aggro queue: ids of things that have hit us that AREN'T our current
 -- <t>. Adds go on the end as they hit us; we don't touch them while our
 -- current target is still alive -- finish that fight first, then work
 -- through whoever else started swinging on us, oldest first.
-local aggro_queue      = {}
-local AGGRO_QUEUE_CAP  = 10
+local aggro_queue = {}
+local AGGRO_QUEUE_CAP = 10
 
 local function Resolve_Attack_Name(param)
     if not param or param == 0 then return nil end
@@ -345,7 +296,7 @@ windower.register_event('incoming chunk', function(id, data)
     local player = windower.ffxi.get_player()
     if not player then return end
 
-    local current    = windower.ffxi.get_mob_by_target('t')
+    local current = windower.ffxi.get_mob_by_target('t')
     local current_id = current and current.id
 
     local target_count = action['Target Count'] or 1
@@ -356,11 +307,11 @@ windower.register_event('incoming chunk', function(id, data)
 
             if reaction == 0 then
                 local actor_id = action.Actor
-                local actor    = windower.ffxi.get_mob_by_id(actor_id)
+                local actor = windower.ffxi.get_mob_by_id(actor_id)
 
-                last_damage_source    = actor and actor.name or last_damage_source or 'something unseen'
+                last_damage_source = actor and actor.name or last_damage_source or 'something unseen'
                 last_damage_source_id = actor_id
-                last_damage_kind      = Resolve_Attack_Name(action.Param)
+                last_damage_kind = Resolve_Attack_Name(action.Param)
 
                 if actor_id and actor_id ~= current_id then
                     local already_queued = false
@@ -383,6 +334,125 @@ windower.register_event('incoming chunk', function(id, data)
         end
     end
 end)
+
+-- COMBAT STALL / ASSIST WATCH
+--
+-- Tracks who's actually landing hits, separate from the death-watch
+-- tracker above (which is about damage taken, not dealt). Two trackers:
+--   last_party_damage_to_target -- last time ANYONE (us or party)
+--     landed a hit on our current <t>. If this goes 20s with no hits
+--     at all, the fight's stalled -- nothing's dying, drop it and let
+--     normal targeting pick something else.
+--   last_self_damage_to_target -- last time WE landed a hit on our
+--     current <t>, specifically. If we're whiffing for 20s while a
+--     party member is actively landing hits on something else, jump
+--     over and help them with that one mob, then revert once it dies.
+-- party_activity tracks the latter half: who in the party hit what,
+-- and when, regardless of what our own target is.
+local last_party_damage_to_target = nil
+local last_self_damage_to_target  = nil
+local damage_watch_target_id      = nil
+local party_activity              = {}  -- [actor_id] = {last_hit = os.clock(), target_id = mob id}
+local temp_assist_mob_id          = nil -- non-nil while temporarily helping someone else's fight
+
+local function Is_Party_Member(actor_id)
+    if not actor_id then return false end
+    local party = windower.ffxi.get_party()
+    if not party then return false end
+    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+        local m = party[key]
+        local mid = m and ((m.mob and m.mob.id) or m.id)
+        if mid == actor_id then return true end
+    end
+    return false
+end
+
+windower.register_event('incoming chunk', function(id, data)
+    if id ~= 0x028 then return end
+
+    local action = packets.parse('incoming', data)
+    local player = windower.ffxi.get_player()
+    if not player then return end
+
+    local current    = windower.ffxi.get_mob_by_target('t')
+    local current_id = current and current.id
+
+    -- New/changed target -- give it a clean 20s grace period instead of
+    -- inheriting a stale timer from whatever we were fighting before.
+    if damage_watch_target_id ~= current_id then
+        damage_watch_target_id      = current_id
+        last_self_damage_to_target  = current_id and os.clock() or nil
+        last_party_damage_to_target = current_id and os.clock() or nil
+    end
+
+    local is_self  = action.Actor == player.id
+    local is_party = is_self or Is_Party_Member(action.Actor)
+    if not is_party then return end
+
+    local target_count = action['Target Count'] or 1
+    for t = 1, target_count do
+        local tid = action['Target ' .. t .. ' ID']
+        if tid and action['Target ' .. t .. ' Action 1 Reaction'] == 0 then
+            if tid == current_id then
+                last_party_damage_to_target = os.clock()
+                if is_self then last_self_damage_to_target = os.clock() end
+            end
+            if not is_self then
+                party_activity[action.Actor] = {last_hit = os.clock(), target_id = tid}
+            end
+            break
+        end
+    end
+end)
+
+function Combat_Stall_Monitor()
+    while Start_Engine do
+        local player = windower.ffxi.get_player()
+        local current = player and windower.ffxi.get_mob_by_target('t')
+
+        if player and player.status == 1 and current
+            and current.valid_target and current.hpp and current.hpp > 0 then
+
+            local now = os.clock()
+
+            if last_party_damage_to_target and now - last_party_damage_to_target >= 20 then
+                windower.add_to_chat(207, '[Lazy] No damage landing on ' .. current.name .. ' for 20s -- switching targets.')
+                windower.send_command('input /attack off; input /target <me>')
+                temp_assist_mob_id = nil
+
+            elseif last_self_damage_to_target and now - last_self_damage_to_target >= 20 then
+                local helper_target_id = nil
+                for actor_id, info in pairs(party_activity) do
+                    if now - info.last_hit <= 5 and info.target_id ~= current.id then
+                        helper_target_id = info.target_id
+                        break
+                    end
+                end
+
+                if helper_target_id then
+                    local mob = windower.ffxi.get_mob_by_id(helper_target_id)
+                    if mob and mob.valid_target and mob.hpp and mob.hpp > 0 then
+                        windower.add_to_chat(207, '[Lazy] Not landing hits on ' .. current.name .. ' -- helping with ' .. mob.name .. ' instead.')
+                        windower.send_command('input /target "' .. mob.name .. '"; wait 0.2; input /attack on')
+                        temp_assist_mob_id = mob.id
+                    end
+                end
+            end
+
+        elseif temp_assist_mob_id then
+            -- The mob we jumped over to help with is dead/gone --
+            -- drop it and let normal targeting take back over.
+            local mob = windower.ffxi.get_mob_by_id(temp_assist_mob_id)
+            if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
+                windower.add_to_chat(207, '[Lazy] Done helping -- back to normal targeting.')
+                temp_assist_mob_id = nil
+                windower.send_command('input /attack off; input /target <me>')
+            end
+        end
+
+        coroutine.sleep(5)
+    end
+end
 
 function Death_Monitor()
     while Start_Engine do
@@ -409,11 +479,8 @@ function Death_Monitor()
         coroutine.sleep(0.5)
     end
 end
-
-
-------------------------------------------------------------
--- ENGAGEMENT SYNC
-------------------------------------------------------------
+ 
+-- ENGAGEMENT SYNC 
 
 function Engagement_Sync()
     while Start_Engine do
@@ -490,33 +557,24 @@ function Engagement_Sync()
         coroutine.sleep(10)
     end
 end
-
-
-------------------------------------------------------------
--- OUTGOING PACKETS
-------------------------------------------------------------
+ 
+-- OUTGOING PACKETS 
 
 windower.register_event('outgoing chunk', function(id, data)
     if id ~= 0x015 then return end
     local action = packets.parse('outgoing', data)
     PlayerH = action.Rotation
 end)
-
-
-------------------------------------------------------------
--- STATUS CHANGE LISTENERS
-------------------------------------------------------------
+ 
+-- STATUS CHANGE LISTENERS 
 
 windower.register_event('status change', function(new_status_id)
     if new_status_id == 1 then -- Engaged
         Enforce_Backline_Rules()
     end
 end)
-
-
-------------------------------------------------------------
--- COMMANDS
-------------------------------------------------------------
+ 
+-- COMMANDS 
 
 windower.register_event('addon command', function(...)
     local raw_args = {...}
@@ -555,22 +613,28 @@ windower.register_event('addon command', function(...)
         if Start_Engine then return end
 
         Start_Engine = true
-        self_buff_last_cast    = {}
+        self_buff_last_cast = {}
         self_ability_last_cast = {}
-        haste_last_cast        = {}
-        debuff_last_cast       = {}
-        refresh_last_cast      = {}
-        party_buff_last_cast   = {}
-        entrust_last_cast      = {}
-        path_last_distance       = nil
-        path_last_progress_time  = nil
-        path_stuck_alerted       = false
+        haste_last_cast = {}
+        debuff_last_cast = {}
+        refresh_last_cast = {}
+        party_buff_last_cast = {}
+        entrust_last_cast = {}
+        path_last_distance = nil
+        path_last_progress_time = nil
+        path_stuck_alerted = false
         origin_unreachable_since = nil
-        last_damage_source       = nil
-        last_damage_source_id    = nil
-        last_damage_kind         = nil
-        death_reported           = false
-        aggro_queue              = {}
+        last_damage_source = nil
+        last_damage_source_id = nil
+        last_damage_kind = nil
+        death_reported = false
+        aggro_queue = {}
+        last_party_damage_to_target = nil
+        last_self_damage_to_target = nil
+        damage_watch_target_id = nil
+        party_activity = {}
+        temp_assist_mob_id = nil
+        autotarget_was_off = false
 
         Update_Job_Profile()
         Snapshot_Trusts()
@@ -585,6 +649,7 @@ windower.register_event('addon command', function(...)
         coroutine.schedule(Trust_Monitor, 0)
         coroutine.schedule(Death_Monitor, 0)
         coroutine.schedule(Engagement_Sync, 0)
+        coroutine.schedule(Combat_Stall_Monitor, 0)
         return
     end
 
@@ -609,15 +674,16 @@ windower.register_event('addon command', function(...)
 
     if command == 'show' then
         Update_Job_Profile()
-        windower.add_to_chat(11, 'Main job: '       .. tostring(current_job))
-        windower.add_to_chat(11, 'Autotarget: '     .. tostring(settings.autotarget))
-        windower.add_to_chat(11, 'Spell: '          .. settings.spell)
-        windower.add_to_chat(11, 'Use Spell: '      .. tostring(settings.spell_active))
-        windower.add_to_chat(11, 'Weaponskill: '    .. settings.weaponskill)
-        windower.add_to_chat(11, 'Use Weaponskill: '.. tostring(settings.weaponskill_active))
-        windower.add_to_chat(11, 'Target: '         .. settings.target)
-        windower.add_to_chat(11, 'Buffs: '          .. tostring(settings.buffs_active))
-        windower.add_to_chat(11, 'Cure Bot: '       .. tostring(settings.cure_active))
+        windower.add_to_chat(11, 'Main job: ' .. tostring(current_job))
+        windower.add_to_chat(11, 'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'))
+        windower.add_to_chat(11, 'Autotarget: ' .. tostring(settings.autotarget))
+        windower.add_to_chat(11, 'Spell: ' .. settings.spell)
+        windower.add_to_chat(11, 'Use Spell: ' .. tostring(settings.spell_active))
+        windower.add_to_chat(11, 'Weaponskill: ' .. settings.weaponskill)
+        windower.add_to_chat(11, 'Use Weaponskill:' .. tostring(settings.weaponskill_active))
+        windower.add_to_chat(11, 'Target: ' .. settings.target)
+        windower.add_to_chat(11, 'Buffs: ' .. tostring(settings.buffs_active))
+        windower.add_to_chat(11, 'Cure Bot: ' .. tostring(settings.cure_active))
         return
     end
 
@@ -635,7 +701,7 @@ windower.register_event('addon command', function(...)
     if command == 'assist' then
         settings.assist = args[2] or ''
         windower.add_to_chat(2, 'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'))
-        
+
         if settings.assist ~= '' then
             windower.send_command('input /assist ' .. settings.assist)
             if active_profile and active_profile.auto_engage == false then
@@ -673,11 +739,8 @@ windower.register_event('addon command', function(...)
         return
     end
 end)
-
-
-------------------------------------------------------------
--- WEAPONSKILLS
-------------------------------------------------------------
+ 
+-- WEAPONSKILLS 
 
 function Next_WS()
     local closers = Get_WS_Closers()
@@ -686,11 +749,8 @@ function Next_WS()
     ws_index = (ws_index % #closers) + 1
     return ws
 end
-
-
-------------------------------------------------------------
--- HEADING / MOVEMENT
-------------------------------------------------------------
+ 
+-- HEADING / MOVEMENT 
 
 function HeadingTo(x, y)
     local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
@@ -708,11 +768,8 @@ function TurnToTarget()
         windower.ffxi.turn(HeadingTo(target.x, target.y))
     end
 end
-
-
-------------------------------------------------------------
--- ORIGIN DISTANCE
-------------------------------------------------------------
+ 
+-- ORIGIN DISTANCE 
 
 function Origin_Distance(x, y, z)
     if not origin_x then return math.huge end
@@ -728,9 +785,9 @@ function Set_Origin()
     origin_x = player.x
     origin_y = player.y
     origin_z = player.z
-    path_last_distance       = nil
-    path_last_progress_time  = nil
-    path_stuck_alerted       = false
+    path_last_distance = nil
+    path_last_progress_time = nil
+    path_stuck_alerted = false
     origin_unreachable_since = nil
     windower.add_to_chat(2, 'Origin set: (' .. math.floor(origin_x) .. ', ' .. math.floor(origin_y) .. ') radius: ' .. origin_radius)
 end
@@ -777,9 +834,9 @@ function Path_To_Origin()
         local now = os.clock()
 
         if not path_last_distance or distance < path_last_distance - PATH_STUCK_EPSILON then
-            path_last_distance      = distance
+            path_last_distance = distance
             path_last_progress_time = now
-            path_stuck_alerted      = false
+            path_stuck_alerted = false
         elseif path_last_progress_time
             and (now - path_last_progress_time) >= PATH_STUCK_TIMEOUT then
 
@@ -803,18 +860,15 @@ function Path_To_Origin()
         end
     else
         windower.ffxi.run(false)
-        pathing_to_origin       = false
-        path_tick               = 0
-        path_last_distance      = nil
+        pathing_to_origin = false
+        path_tick = 0
+        path_last_distance = nil
         path_last_progress_time = nil
-        path_stuck_alerted      = false
+        path_stuck_alerted = false
     end
 end
-
-
-------------------------------------------------------------
--- TARGETING HELPERS
-------------------------------------------------------------
+ 
+-- TARGETING HELPERS 
 
 function Find_Named_Target(target_name)
     local mob_array = windower.ffxi.get_mob_array()
@@ -891,30 +945,13 @@ function Find_Nearest_Target()
     end
     return -1
 end
-
-
-------------------------------------------------------------
+ 
 -- PARTY-AWARE TARGET PRIORITY
---
--- Plain nearest-unclaimed autotargeting doesn't know or care what
--- the rest of the party is doing -- it'll happily wander off after
--- something on the whitelist while everyone else is fighting
--- something else entirely. Priority order when picking what to
--- fight next:
---
---   1. Whatever we're already on, if it's still a legitimate fight
---      (alive, in range, and either unclaimed, ours, or a party
---      member's claim) -- finish the kill before doing anything
---      else.
---   2. Whatever a party member is currently fighting (found via
---      claim_id, not the whitelist -- we should help regardless of
---      whether it's something we'd normally solo-farm).
---   3. The normal nearest-unclaimed-whitelist search.
---
--- Only used for plain autotarget (no settings.target name set) --
--- an explicit named target is a deliberate override and always
--- wins outright.
-------------------------------------------------------------
+-- Target priority:
+--   1. Current legitimate target.
+--   2. Party member's target.
+--   3. Nearest unclaimed whitelist target.
+-- Used only for plain autotarget. Named targets always override. 
 
 function Get_Party_Claim_Ids()
     local ids = {}
@@ -983,10 +1020,6 @@ function Is_Legitimate_Target(mob, expected_name, party_ids)
         return string.lower(mob.name or '') == string.lower(expected_name)
             and claimed_by_us_or_party
     end
-
-    -- Already claimed by us or the party: keep helping regardless
-    -- of whitelist -- finish what's already being fought. Only
-    -- fall back to the whitelist check when nobody's claimed it.
     if claimed_by_us_or_party then
         return true
     end
@@ -1008,14 +1041,10 @@ function Choose_Target(party_ids)
 
     return Find_Nearest_Target()
 end
-
-
-------------------------------------------------------------
--- MONITORS
-------------------------------------------------------------
+ 
+-- MONITORS 
 
 local FOLLOW_MELEE_RANGE = 3
-
 function Follow_Monitor()
     while Start_Engine do
         local target = windower.ffxi.get_mob_by_target('t')
@@ -1105,9 +1134,28 @@ function Target_Monitor()
     end
 end
 
+local autotarget_was_off = false
+
 function Targeting()
     while Start_Engine do
         local player = windower.ffxi.get_player()
+
+        -- STUPIDITY FIXER: autotarget getting left off (forgotten after
+        -- testing, fat-fingered, whatever) means Lazy just sits there
+        -- doing nothing forever with no other symptom. Force it back on
+        -- unconditionally -- there's no legitimate reason to want it off
+        -- while the addon's running. One chat line per incident, not
+        -- spammed every tick.
+        if not settings.autotarget then
+            settings.autotarget = true
+            if not autotarget_was_off then
+                windower.add_to_chat(207, '[Lazy] Autotarget was off -- turned it back on.')
+                autotarget_was_off = true
+            end
+        else
+            autotarget_was_off = false
+        end
+
         if player and player.status ~= 1 then
             if settings.assist ~= '' then
                 windower.send_command('input /assist ' .. settings.assist)
@@ -1161,26 +1209,13 @@ function Targeting()
         coroutine.sleep(0.5)
     end
 end
-
-
-------------------------------------------------------------
+ 
 -- COMBAT
-------------------------------------------------------------
-
-------------------------------------------------------------
 -- DNC ROTATION
---
--- Priority order:
---   1. Emergency Waltz  -- self-targeted, no target needed, always
---      checked first. HP <= 50% -> highest tier we can afford
---      (checked against MP, since Waltzes cost MP, not TP).
---   2. Reverse Flourish -- once Finishing Move has stacked to 5,
---      or right after we just landed a weaponskill (dnc_flourish_
---      pending, set at every WS-fire site).
---   3. Box Step -- keep landing it (each successful land is +1
---      Finishing Move, read straight off the stacked self-buff)
---      until we're at 5 stacks.
-------------------------------------------------------------
+-- Priority:
+--   1. Emergency Waltz at <=50% HP.
+--   2. Reverse Flourish at 5 Finishing Moves or after a WS.
+--   3. Box Step until 5 Finishing Moves.
 
 function Try_DNC_Actions()
     local player = windower.ffxi.get_player()
@@ -1226,7 +1261,7 @@ function Combat()
     local player = windower.ffxi.get_player()
     if not player then return end
 
-    local target  = windower.ffxi.get_mob_by_target('t')
+    local target = windower.ffxi.get_mob_by_target('t')
     local starter = Get_WS_Starter()
 
     if player.status == 1 then
@@ -1309,7 +1344,7 @@ function Combat()
     if target and target.distance and math.sqrt(target.distance) <= 3 then
         local tp = player.vitals.tp
 
-        if sc_active and not sc_active(target.id) and starter and tp >= starter[2] 
+        if sc_active and not sc_active(target.id) and starter and tp >= starter[2]
             and active_profile.use_weaponskills ~= false then
             windower.send_command('input /ws "' .. starter[1] .. '" <t>')
             isBusy = Action_Delay
@@ -1328,11 +1363,8 @@ function Combat()
         Cast_Spell(settings.spell)
     end
 end
-
-
-------------------------------------------------------------
--- SPELL / ABILITY HELPERS
-------------------------------------------------------------
+ 
+-- SPELL / ABILITY HELPERS 
 
 function Is_Blacklisted(name)
     if not name then return false end
@@ -1350,9 +1382,6 @@ function Is_Haste_Blacklisted(name)
     return false
 end
 
--- Unlike the blacklists above (exact match), this is a substring
--- match -- so a whitelist entry like 'Beetle' covers every named
--- Beetle mob without needing each one listed individually.
 function Is_Dispel_Whitelisted(name)
     if not name then return false end
     local lname = string.lower(name)
@@ -1420,11 +1449,8 @@ function Cast_Ability(ability_name)
     windower.send_command('input /ja "' .. ability_name .. '" <me>')
     isBusy = Action_Delay
 end
-
-
-------------------------------------------------------------
--- BUFF SYSTEM
-------------------------------------------------------------
+ 
+-- BUFF SYSTEM 
 
 function Buff_Tick()
     if not settings.buffs_active or not active_profile then return end
@@ -1443,26 +1469,23 @@ function Buff_Tick()
     if active_profile.debuffs then
         Ensure_Debuff_Target()
         local target = windower.ffxi.get_mob_by_target('t')
-        local pet    = windower.ffxi.get_mob_by_target('pet')
+        local pet = windower.ffxi.get_mob_by_target('pet')
 
         if target and target.hpp and target.hpp > 0 and not Is_Blacklisted(target.name) then
             for _, debuff in ipairs(active_profile.debuffs) do
-                -- debuff.name may be a single spell name, or a list of
-                -- fallback names in priority order (e.g. tier II, then
-                -- tier I, for jobs that may not have the higher tier).
                 local names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
-                local key   = names[1]
+                local key = names[1]
 
-                local last     = debuff_last_cast[key]
+                local last = debuff_last_cast[key]
                 local interval = (debuff.interval or 1) * 60
-                
+
                 local pet_ok = true
                 if debuff.require_no_pet and pet then
                     pet_ok = false
                 end
 
                 if pet_ok and (not last or now - last >= interval) then
-                    -- Pre-ability check (e.g., Blaze of Glory)
+                    -- Pre-ability check
                     if debuff.use_ability_before and Can_Cast_Ability(debuff.use_ability_before) then
                         Cast_Ability(debuff.use_ability_before)
                         return
@@ -1474,13 +1497,12 @@ function Buff_Tick()
                         local spell = res.spells:with('name', name)
                         if spell and Cast_Spell_On(name, spell_target) then
                             pending_cast = {
-                                store    = debuff_last_cast,
-                                key      = key,
+                                store = debuff_last_cast,
+                                key = key,
                                 spell_id = spell.id,
-                                sent_at  = now,
+                                sent_at = now,
                             }
-
-                            -- Post-ability sequence (e.g., Ecliptic Attrition)
+                            -- Post-ability sequence 
                             if debuff.use_ability_after then
                                 local follow_up = debuff.use_ability_after
                                 coroutine.schedule(function()
@@ -1498,33 +1520,18 @@ function Buff_Tick()
             end
         end
     end
-
     -- 1B. DISPEL
-    --
-    -- Was gated on detecting Rhino Guard/Bubble Curtain on the
-    -- target via target.buffs, but that doesn't populate reliably,
-    -- so it was silently missing good windows. Simplified to a plain
-    -- safety-net interval cast instead -- if there's nothing to
-    -- strip it's a wasted cast, not a harmful one.
-    --
-    -- Restricted to settings.lua's dispel_whitelist -- substring
-    -- match against the target's name, case-insensitive, same idea
-    -- as spell_blacklist/haste_blacklist. Edit that one list to add
-    -- or remove mobs; no job profile needs touching.
-    --
-    -- BLM/SCH/WHM only has Dispel while Dark Arts is open. Lazy
-    -- doesn't force that book switch itself -- the grimoire script
-    -- handles it on its own -- this just waits until require_buff is
-    -- already true.
+    -- Safety-net cast on the configured whitelist at set intervals.
+    -- Uses case-insensitive substring matching; require_buff still applies.
     if active_profile.dispel then
         local dispel_cfg = active_profile.dispel
-        local dispel_ok  = true
+        local dispel_ok = true
 
         if dispel_cfg.require_buff and not buffactive[dispel_cfg.require_buff] then
             dispel_ok = false
         end
 
-        local last     = dispel_last_cast[dispel_cfg.spell]
+        local last = dispel_last_cast[dispel_cfg.spell]
         local interval = dispel_cfg.interval or 20
 
         if dispel_ok and (not last or now - last >= interval) then
@@ -1538,24 +1545,18 @@ function Buff_Tick()
                 if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
                     windower.add_to_chat(207, '[Lazy] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
                     pending_cast = {
-                        store    = dispel_last_cast,
-                        key      = dispel_cfg.spell,
+                        store = dispel_last_cast,
+                        key = dispel_cfg.spell,
                         spell_id = spell.id,
-                        sent_at  = now,
+                        sent_at = now,
                     }
                     return
                 end
             end
         end
     end
-
     -- 1C. MOB-SPECIFIC SPELLS
-    --
-    -- Fires a spell (with tiered fallback) only while a specific
-    -- named mob is targeted -- e.g. spamming Aspir on an MP-draining
-    -- mob whenever the recast is up. `interval` here is just a short
-    -- debounce; the real gate is the spell's own recast via
-    -- Cast_Spell_On, same as everywhere else in this file.
+    -- Casts the configured spell/fallback on matching mobs when ready.
     if active_profile.mob_spells then
         local target = windower.ffxi.get_mob_by_target('t')
 
@@ -1563,9 +1564,9 @@ function Buff_Tick()
             for _, entry in ipairs(active_profile.mob_spells) do
                 if string.lower(target.name) == string.lower(entry.mob_name) then
                     local names = type(entry.names) == 'table' and entry.names or {entry.names}
-                    local key   = 'mobspell:' .. entry.mob_name .. ':' .. names[1]
+                    local key = 'mobspell:' .. entry.mob_name .. ':' .. names[1]
 
-                    local last     = mob_spell_last_cast[key]
+                    local last = mob_spell_last_cast[key]
                     local interval = entry.interval or 1
 
                     if not last or now - last >= interval then
@@ -1573,10 +1574,10 @@ function Buff_Tick()
                             local spell = res.spells:with('name', name)
                             if spell and Cast_Spell_On(name, entry.target or '<t>') then
                                 pending_cast = {
-                                    store    = mob_spell_last_cast,
-                                    key      = key,
+                                    store = mob_spell_last_cast,
+                                    key = key,
                                     spell_id = spell.id,
-                                    sent_at  = now,
+                                    sent_at = now,
                                 }
                                 return
                             end
@@ -1597,17 +1598,14 @@ function Buff_Tick()
 
     -- 3. SELF BUFFS
     for _, buff in ipairs(active_profile.self_buffs or {}) do
-        -- buff.name may be a single spell name, or a list of fallback
-        -- names in priority order (e.g. Storm II, then Storm I, for
-        -- jobs that may not have the higher tier).
+        -- buff.name may be a spell or priority-ordered fallback list.
         local names = type(buff.name) == 'table' and buff.name or {buff.name}
-        local key   = names[1]
+        local key = names[1]
 
         local interval = (buff.interval or 20) * 60
-        local last     = self_buff_last_cast[key]
+        local last = self_buff_last_cast[key]
 
         -- require_buff lets an entry only fire while a given player
-        -- buff is active (e.g. only keep Thunderstorm up in Dark Arts).
         local buff_ok = true
         if buff.require_buff and not buffactive[buff.require_buff] then
             buff_ok = false
@@ -1618,10 +1616,10 @@ function Buff_Tick()
                 local spell = res.spells:with('name', name)
                 if spell and Cast_Spell_On(name, '<me>') then
                     pending_cast = {
-                        store    = self_buff_last_cast,
-                        key      = key,
+                        store = self_buff_last_cast,
+                        key = key,
                         spell_id = spell.id,
-                        sent_at  = now,
+                        sent_at = now,
                     }
                     return
                 end
@@ -1645,13 +1643,13 @@ function Buff_Tick()
 
     for _, ab in ipairs(self_ability_list) do
         local interval = (ab.interval or 20) * 60
-        local last     = self_ability_last_cast[ab.name]
-        local due      = not last or now - last >= interval
+        local last = self_ability_last_cast[ab.name]
+        local due = not last or now - last >= interval
 
         if due then
             local pet_ok = true
-            local mp_ok  = true
-            local pet    = windower.ffxi.get_mob_by_target('pet')
+            local mp_ok = true
+            local pet = windower.ffxi.get_mob_by_target('pet')
 
             if ab.require_pet and not pet then
                 pet_ok = false
@@ -1678,11 +1676,11 @@ function Buff_Tick()
     -- 5. ENTRUST BUFFS
     if active_profile.entrust_buffs then
         local me_zone = windower.ffxi.get_info().zone
-        local party   = windower.ffxi.get_party()
+        local party = windower.ffxi.get_party()
 
         for _, eb in ipairs(active_profile.entrust_buffs) do
             local interval = (eb.interval or 1) * 60
-            local last     = entrust_last_cast[eb.spell]
+            local last = entrust_last_cast[eb.spell]
 
             if not last or now - last >= interval then
                 local chosen_target = nil
@@ -1716,10 +1714,10 @@ function Buff_Tick()
                     local spell = res.spells:with('name', eb.spell)
                     if spell and Cast_Spell_On(eb.spell, chosen_target) then
                         pending_cast = {
-                            store    = entrust_last_cast,
-                            key      = eb.spell,
+                            store = entrust_last_cast,
+                            key = eb.spell,
                             spell_id = spell.id,
-                            sent_at  = now,
+                            sent_at = now,
                         }
                         return
                     end
@@ -1731,13 +1729,13 @@ function Buff_Tick()
     -- 6. PARTY BUFFS
     if active_profile.party_buffs then
         local me_zone = windower.ffxi.get_info().zone
-        local party   = windower.ffxi.get_party()
+        local party = windower.ffxi.get_party()
 
         for _, pb in ipairs(active_profile.party_buffs) do
             local spell_name = pb.spell
-            local interval   = (pb.interval or 6) * 60
-            local range      = pb.range or 20
-            local targets    = {}
+            local interval = (pb.interval or 6) * 60
+            local range = pb.range or 20
+            local targets = {}
 
             if pb.targets == 'ALL_PLAYERS' then
                 if party then
@@ -1784,10 +1782,10 @@ function Buff_Tick()
                     local spell = res.spells:with('name', spell_name)
                     if spell and Cast_Spell_On(spell_name, tname) then
                         pending_cast = {
-                            store    = party_buff_last_cast,
-                            key      = cache_key,
+                            store = party_buff_last_cast,
+                            key = cache_key,
                             spell_id = spell.id,
-                            sent_at  = now,
+                            sent_at = now,
                         }
                         return
                     end
@@ -1799,25 +1797,25 @@ function Buff_Tick()
     -- 7. HASTE HANDLING
     if active_profile.haste_active and not active_profile.party_buffs then
         local self_interval = (active_profile.haste_self_interval or 20) * 60
-        local self_last     = haste_last_cast.me
-        local haste_spell   = active_profile.haste_spell or 'Haste II'
+        local self_last = haste_last_cast.me
+        local haste_spell = active_profile.haste_spell or 'Haste II'
 
         if not self_last or now - self_last >= self_interval then
             local spell = res.spells:with('name', haste_spell)
             if spell and Cast_Spell_On(haste_spell, '<me>') then
                 pending_cast = {
-                    store    = haste_last_cast,
-                    key      = 'me',
+                    store = haste_last_cast,
+                    key = 'me',
                     spell_id = spell.id,
-                    sent_at  = now,
+                    sent_at = now,
                 }
                 return
             end
         end
 
         local party_interval = (active_profile.haste_party_interval or 6) * 60
-        local haste_targets  = active_profile.haste_targets
-        local me_zone        = windower.ffxi.get_info().zone
+        local haste_targets = active_profile.haste_targets
+        local me_zone = windower.ffxi.get_info().zone
 
         if haste_targets == 'ALL_PLAYERS' then
             haste_targets = {}
@@ -1845,10 +1843,10 @@ function Buff_Tick()
                 local spell = res.spells:with('name', haste_spell)
                 if spell and Cast_Spell_On(haste_spell, tname) then
                     pending_cast = {
-                        store    = haste_last_cast,
-                        key      = tname,
+                        store = haste_last_cast,
+                        key = tname,
                         spell_id = spell.id,
-                        sent_at  = now,
+                        sent_at = now,
                     }
                     return
                 end
@@ -1858,11 +1856,11 @@ function Buff_Tick()
 
     -- 8. REFRESH HANDLING
     if active_profile.refresh_targets and not active_profile.party_buffs then
-        local refresh   = active_profile.refresh_targets
-        local interval  = (refresh.interval or 6) * 60
+        local refresh = active_profile.refresh_targets
+        local interval = (refresh.interval or 6) * 60
         local spell_name = refresh.spell or 'Refresh III'
-        local me_zone   = windower.ffxi.get_info().zone
-        local party     = windower.ffxi.get_party()
+        local me_zone = windower.ffxi.get_info().zone
+        local party = windower.ffxi.get_party()
 
         if party then
             for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
@@ -1887,10 +1885,10 @@ function Buff_Tick()
                             local spell = res.spells:with('name', spell_name)
                             if spell and Cast_Spell_On(spell_name, m.name) then
                                 pending_cast = {
-                                    store    = refresh_last_cast,
-                                    key      = cache_key,
+                                    store = refresh_last_cast,
+                                    key = cache_key,
                                     spell_id = spell.id,
-                                    sent_at  = now,
+                                    sent_at = now,
                                 }
                                 return
                             end
@@ -1908,11 +1906,8 @@ function Buff_Monitor()
         coroutine.sleep(1)
     end
 end
-
-
-------------------------------------------------------------
--- CURE BOT
-------------------------------------------------------------
+ 
+-- CURE BOT 
 
 function Party_Has_WHM()
     local party = windower.ffxi.get_party()
@@ -1939,21 +1934,8 @@ function Cure_Bot_Tick()
     if cure_active and active_profile.cure_bot_requires_buff then
         cure_active = buffactive[active_profile.cure_bot_requires_buff] and true or false
     end
-
-    --------------------------------------------------------
     -- FAILSAFE CURING
-    --
-    -- Some jobs (RDM, etc.) aren't the intended healer -- there's
-    -- normally a WHM trust/player on hand -- but if someone drops
-    -- to a genuinely dangerous HP% anyway, something's clearly
-    -- gone wrong with that healer, and standing there not curing
-    -- because "that's not my job" isn't useful. This only kicks in
-    -- when the profile isn't already a full-time healer (cure_active
-    -- above), and only at a much lower threshold, so it never
-    -- competes with or duplicates the real healer's job -- it's
-    -- purely there to keep the party alive if the real one drops
-    -- the ball.
-    --------------------------------------------------------
+    -- Emergency cure for low HP when the profile isn't already healing.
     local failsafe = false
     if not cure_active and active_profile.emergency_cure then
         cure_active = true
@@ -1987,7 +1969,7 @@ function Cure_Bot_Tick()
     local target_name = worst_member.name or (worst_member.mob and worst_member.mob.name)
     if not target_name then return end
 
-    local max_hp     = worst_member.hp / (worst_hpp / 100)
+    local max_hp = worst_member.hp / (worst_hpp / 100)
     local missing_hp = math.floor(max_hp - worst_member.hp)
     if missing_hp <= 0 then return end
 
@@ -2015,13 +1997,10 @@ function Cure_Monitor()
         coroutine.sleep(0.5)
     end
 end
+ 
+-- TRUST RESUMMON 
 
-
-------------------------------------------------------------
--- TRUST RESUMMON
-------------------------------------------------------------
-
-local tracked_trusts      = {}
+local tracked_trusts = {}
 local trust_resummon_last = {}
 
 function Snapshot_Trusts()
@@ -2065,10 +2044,10 @@ function Trust_Tick()
             local spell = res.spells:with('name', name)
             if spell and Cast_Spell_On(name, '<me>') then
                 pending_cast = {
-                    store    = trust_resummon_last,
-                    key      = name,
+                    store = trust_resummon_last,
+                    key = name,
                     spell_id = spell.id,
-                    sent_at  = os.clock(),
+                    sent_at = os.clock(),
                 }
                 windower.add_to_chat(2, '[Lazy] Resummoning trust: ' .. name)
                 return
@@ -2083,11 +2062,8 @@ function Trust_Monitor()
         coroutine.sleep(1)
     end
 end
-
-
-------------------------------------------------------------
--- BUFF LIST CONVERTER
-------------------------------------------------------------
+ 
+-- BUFF LIST CONVERTER 
 
 function convert_buff_list(bufflist)
     local buffs = {}
@@ -2102,10 +2078,7 @@ function convert_buff_list(bufflist)
     end
     return buffs
 end
-
-
-------------------------------------------------------------
--- INIT
-------------------------------------------------------------
+ 
+-- INIT 
 
 Update_Job_Profile()

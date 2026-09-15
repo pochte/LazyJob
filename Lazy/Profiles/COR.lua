@@ -1,11 +1,9 @@
-------------------------------------------------------------
--- COR JOB PROFILE
-------------------------------------------------------------
+    
+-- COR JOB PROFILE 
 --
 -- Corsair -- Rolls, Quick Draw, ranged weaponskills.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.COR
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.COR 
 
 JOB_PROFILES.COR = {
 

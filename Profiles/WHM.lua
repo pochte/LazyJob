@@ -1,25 +1,14 @@
-------------------------------------------------------------
--- WHM JOB PROFILE
-------------------------------------------------------------
---
+    
+-- WHM JOB PROFILE 
 -- White Mage -- primary cure bot, backline support.
---
--- Loaded by Lazy.lua into JOB_PROFILES.WHM
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.WHM 
 
 JOB_PROFILES.WHM = {
-
-    --------------------------------------------------------
-    -- MELEE / ENGAGE SETTINGS
-    --------------------------------------------------------
-
+       -- MELEE / ENGAGE SETTINGS
+   
     auto_engage = false,
     use_weaponskills = false,
-
-    --------------------------------------------------------
-    -- BUFFS & SUPPORT
-    --------------------------------------------------------
-
+       -- BUFFS & SUPPORT   
     haste_active = false,
 
     self_buffs = {
@@ -28,27 +17,15 @@ JOB_PROFILES.WHM = {
         { name = 'Auspice',     interval = 300 },
         { name = 'Baraero',     interval = 300 },
     },
-
-    --------------------------------------------------------
-    -- TARGET DISPEL
-    --
-    -- Dispel needs Dark Arts (WHM/SCH sub); the book switch itself
-    -- is handled by the separate grimoire script -- this just waits
-    -- for it.
-    --------------------------------------------------------
-
+   
     dispel = {
         spell = 'Dispel',
         require_buff = 'Dark Arts',
-        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+        interval = 20,        
     },
 
-    --------------------------------------------------------
-    -- CURE BOT
-    --------------------------------------------------------
-
+       -- CURE BOT   
     cure_bot_active = true,
-
     cure_tiers = {
         {max_missing = 250,spells = {'Cure II','Cure'}},
         {max_missing = 600,spells = {'Cure III','Cure II'}},

@@ -1,18 +1,14 @@
-------------------------------------------------------------
--- RDM JOB PROFILE
-------------------------------------------------------------
+    
+-- RDM JOB PROFILE 
 --
 -- Red Mage -- frontline melee, debuff, party buffs, weaponskills.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.RDM
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.RDM 
 
 JOB_PROFILES.RDM = {
 
-    --------------------------------------------------------
-    -- MELEE / ENGAGE SETTINGS
-    --------------------------------------------------------
-
+       -- MELEE / ENGAGE SETTINGS
+   
     auto_engage = true,
     use_weaponskills = true,
 
@@ -21,10 +17,8 @@ JOB_PROFILES.RDM = {
         min_tp = 1000,
     },
 
-    --------------------------------------------------------
-    -- SELF BUFFS
-    --------------------------------------------------------
-
+       -- SELF BUFFS
+   
     self_buffs = {
         { name = 'Refresh III',   interval = 15 },
         { name = 'Haste II',      interval = 23 },
@@ -33,20 +27,16 @@ JOB_PROFILES.RDM = {
         { name = 'Enfire II',     interval = 20 },
     },
 
-    --------------------------------------------------------
-    -- DEBUFFS (Cast ONCE per target ID)
-    --------------------------------------------------------
-
+       -- DEBUFFS (Cast ONCE per target ID)
+   
     debuffs = {
         { name = 'Distract III' },
         { name = 'Inundation' },
         { name = 'Dia III' },
     },
 
-    --------------------------------------------------------
-    -- PARTY BUFFS
-    --------------------------------------------------------
-
+       -- PARTY BUFFS
+   
     party_buffs = {
 
         {
@@ -68,18 +58,15 @@ JOB_PROFILES.RDM = {
         },
     },
 
-    --------------------------------------------------------
-    -- JOB ABILITIES
-    --------------------------------------------------------
-
+       -- JOB ABILITIES
+   
     self_abilities = {
         { name = 'Composure',   interval = 20 },
         { name = 'Saboteur',    interval = 3 },
         { name = 'Haste Samba', interval = 1 },
     },
 
-    --------------------------------------------------------
-    -- FAILSAFE CURING
+       -- FAILSAFE CURING
     --
     -- Not the intended healer -- normally a WHM trust/player is
     -- handling that -- but if anyone drops to 25% HP anyway,
@@ -87,8 +74,7 @@ JOB_PROFILES.RDM = {
     -- this steps in to keep the party alive. Tiers capped at
     -- Cure IV (what RDM actually has); doesn't fire at all unless
     -- someone's genuinely in trouble.
-    --------------------------------------------------------
-
+   
     emergency_cure           = true,
     emergency_cure_threshold = 25,
 

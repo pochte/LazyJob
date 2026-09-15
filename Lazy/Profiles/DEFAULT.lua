@@ -1,11 +1,9 @@
-------------------------------------------------------------
--- DEFAULT JOB PROFILE
-------------------------------------------------------------
+    
+-- DEFAULT JOB PROFILE 
 --
 -- Fallback profile used for any job without a dedicated profile.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.DEFAULT
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.DEFAULT 
 
 JOB_PROFILES.DEFAULT = {
 

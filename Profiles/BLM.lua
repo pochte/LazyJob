@@ -1,14 +1,10 @@
-------------------------------------------------------------
--- BLM JOB PROFILE
-------------------------------------------------------------
+    
+-- BLM JOB PROFILE 
 --
--- Loaded by Lazy.lua into JOB_PROFILES.BLM
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.BLM 
 
-
-------------------------------------------------------------
--- PARTY MODE
-------------------------------------------------------------
+ 
+-- PARTY MODE 
 
 local function BLM_Has_Real_Player_Party()
     local party = windower.ffxi.get_party()
@@ -30,24 +26,17 @@ function BLM_Get_Mode()
     return 'SOLO'
 end
 
-
-------------------------------------------------------------
--- BLM JOB PROFILE
-------------------------------------------------------------
+ 
+-- BLM JOB PROFILE 
 
 JOB_PROFILES.BLM = {
 
-    --------------------------------------------------------
-    -- MELEE / ENGAGE SETTINGS
-    --------------------------------------------------------
-
+       -- MELEE / ENGAGE SETTINGS
+   
     auto_engage = false,
     use_weaponskills = false,
 
-
-  --------------------------------------------------------
 -- SUPPORT / BUFFS
---------------------------------------------------------
 
 self_buffs = {
     {name = {'Windstorm'}, interval = 3, party_only = true, require_buff = 'Dark Arts'},
@@ -55,48 +44,28 @@ self_buffs = {
 },
 
 
-    --------------------------------------------------------
-    -- JOB ABILITIES
-    --------------------------------------------------------
-self_abilities = {
+       -- JOB ABILITIES
+   self_abilities = {
     {name = 'Dark Arts', interval = 10},
     {name = 'Sublimation', interval = 5},
     {name = 'Mana Well', interval = 3},
 },
-    --------------------------------------------------------
-    -- DISPEL (via SCH sub / Dark Arts grimoire)
-    --------------------------------------------------------
-    -- Dispel is only in the book while Dark Arts is active; the book
-    -- switch itself is handled by the separate grimoire script, this
-    -- just gates the cast on that buff being up.
 
     dispel = {
         spell = 'Dispel',
-        require_buff = 'Dark Arts', -- book manager handles the switch; this just waits for it
-        interval = 20, -- seconds; blind safety cast, not gated on buff detection
+        require_buff = 'Dark Arts', 
+        interval = 20, 
     },
-
-    --------------------------------------------------------
-    -- MOB-SPECIFIC SPELLS
-    --------------------------------------------------------
-    -- Locus Armet Beetle drains MP hard -- spam Aspir back at it,
-    -- highest tier available, whenever the recast is up.
-
     mob_spells = {
         {
             mob_name = 'Locus Armet Beetle',
             names = {'Aspir III', 'Aspir II', 'Aspir'},
-            interval = 1, -- seconds, just a debounce; the spell's own recast is the real gate
+            interval = 1, 
         },
     },
 
-    --------------------------------------------------------
-    -- MAGIC BURST
-    --------------------------------------------------------
-
+       -- MAGIC BURST
     magic_burst = true,
-
-    -- Checked in this order. Aero is always preferred over Fire.
     burst_priority = {
         'Blizzard',
         'Aero',
@@ -116,10 +85,8 @@ self_abilities = {
         Water = {'Water VI', 'Water V', 'Water IV'},
         Darkness = {'Comet', 'Impact'},
     },
-    --------------------------------------------------------
-    -- CURE BOT
-    --------------------------------------------------------
-
+       -- CURE BOT
+   
     cure_bot_active = false,
 
     cure_tiers = {

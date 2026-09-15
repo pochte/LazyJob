@@ -1,12 +1,10 @@
-------------------------------------------------------------
--- DNC JOB PROFILE
-------------------------------------------------------------
+    
+-- DNC JOB PROFILE 
 --
 -- Dancer -- weaponskill skillchain settings, step/flourish/waltz
 -- rotation (see Try_DNC_Actions in Lazy.lua).
 --
--- Loaded by Lazy.lua into JOB_PROFILES.DNC
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.DNC 
 
 JOB_PROFILES.DNC = {
 
@@ -25,7 +23,7 @@ JOB_PROFILES.DNC = {
 		"Rudra's Storm",
 	},
 
-	--------------------------------------------------------
+	      ---------
 	-- STEP / FLOURISH / WALTZ ROTATION
 	--
 	-- Box Step until Finishing Move hits 5 stacks, then
@@ -33,7 +31,7 @@ JOB_PROFILES.DNC = {
 	-- weaponskill, even below 5 stacks). Emergency Curing
 	-- Waltz -- highest tier affordable on current MP --
 	-- takes priority over both any time HP drops to 50%.
-	--------------------------------------------------------
+	      ---------
 
 	dnc_rotation = true,
 

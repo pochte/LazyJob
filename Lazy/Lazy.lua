@@ -6,10 +6,8 @@ config  = require('config')
 res     = require('resources')
 packets = require('packets')
 
-
-------------------------------------------------------------
--- MODULES & FALLBACK DEFINITIONS
-------------------------------------------------------------
+ 
+-- MODULES & FALLBACK DEFINITIONS 
 
 dofile(windower.addon_path .. 'skillchain.lua')
 dofile(windower.addon_path .. 'magicburst.lua')
@@ -31,20 +29,16 @@ targeting = targeting or {
     within_origin = true,
     only_unclaimed = true,
 }
-
-------------------------------------------------------------
--- ADDON
-------------------------------------------------------------
+ 
+-- ADDON 
 
 _addon.name     = 'lazy'
 _addon.author   = 'Ulli'
 _addon.version  = '0.9'
 _addon.commands = {'lazy'}
 
-
-------------------------------------------------------------
--- GLOBAL STATE
-------------------------------------------------------------
+ 
+-- GLOBAL STATE 
 
 Start_Engine = false
 isCasting    = false
@@ -52,10 +46,8 @@ isBusy       = 0
 buffactive   = {}
 Action_Delay = 2
 
-
-------------------------------------------------------------
--- MOVEMENT / POSITION
-------------------------------------------------------------
+ 
+-- MOVEMENT / POSITION 
 
 local origin_x          = nil
 local origin_y          = nil
@@ -76,10 +68,8 @@ local PATH_STUCK_EPSILON      = 1
 local origin_unreachable_since   = nil
 local ORIGIN_UNREACHABLE_TIMEOUT = 600
 
-
-------------------------------------------------------------
--- COMBAT STATE
-------------------------------------------------------------
+ 
+-- COMBAT STATE 
 
 local trust_ws_countdown = 0
 local lockon_done        = false
@@ -100,10 +90,8 @@ local DNC_WALTZ_TIERS = {
     'Curing Waltz',
 }
 
-
-------------------------------------------------------------
--- CAST TRACKING
-------------------------------------------------------------
+ 
+-- CAST TRACKING 
 
 local self_buff_last_cast    = {}
 local self_ability_last_cast = {}
@@ -115,18 +103,14 @@ local entrust_last_cast      = {}
 
 local pending_cast = nil
 
-
-------------------------------------------------------------
--- JOB STATE
-------------------------------------------------------------
+ 
+-- JOB STATE 
 
 current_job    = nil
 active_profile = nil
 
-
-------------------------------------------------------------
--- JOB PROFILES
-------------------------------------------------------------
+ 
+-- JOB PROFILES 
 
 JOB_PROFILES = {}
 
@@ -153,10 +137,8 @@ end
 JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
 
-
-------------------------------------------------------------
--- BACKLINE & DISENGAGE OVERRIDES
-------------------------------------------------------------
+ 
+-- BACKLINE & DISENGAGE OVERRIDES 
 
 local function Enforce_Backline_Rules()
     local player = windower.ffxi.get_player()
@@ -179,10 +161,8 @@ local function Ensure_Debuff_Target()
     end
 end
 
-
-------------------------------------------------------------
--- MOVEMENT DETECTION
-------------------------------------------------------------
+ 
+-- MOVEMENT DETECTION 
 
 function Is_Moving()
     local player = windower.ffxi.get_player()
@@ -204,10 +184,8 @@ function Is_Moving()
     return moving
 end
 
-
-------------------------------------------------------------
--- JOB PROFILE
-------------------------------------------------------------
+ 
+-- JOB PROFILE 
 
 function Update_Job_Profile()
     local player = windower.ffxi.get_player()
@@ -230,10 +208,8 @@ function Update_Job_Profile()
     windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
 end
 
-
-------------------------------------------------------------
--- PROFILE HELPERS
-------------------------------------------------------------
+ 
+-- PROFILE HELPERS 
 
 function Get_WS_Starter()
     return active_profile and active_profile.ws_sc_starter or ws_sc_starter
@@ -251,10 +227,8 @@ function Get_Food()
     return active_profile and active_profile.food or food
 end
 
-
-------------------------------------------------------------
--- SETTINGS
-------------------------------------------------------------
+ 
+-- SETTINGS 
 
 defaults = {
     spell              = '',
@@ -270,10 +244,8 @@ defaults = {
 
 settings = config.load(defaults)
 
-
-------------------------------------------------------------
--- INCOMING PACKETS
-------------------------------------------------------------
+ 
+-- INCOMING PACKETS 
 
 windower.register_event('incoming chunk', function(id, data)
     if id ~= 0x028 then return end
@@ -306,10 +278,8 @@ windower.register_event('incoming chunk', function(id, data)
     end
 end)
 
-
-------------------------------------------------------------
--- DEATH WATCH
-------------------------------------------------------------
+ 
+-- DEATH WATCH 
 
 local last_damage_source    = nil
 local last_damage_source_id = nil
@@ -405,24 +375,20 @@ function Death_Monitor()
     end
 end
 
-
-------------------------------------------------------------
--- ENGAGEMENT SYNC
-------------------------------------------------------------
+ 
+-- ENGAGEMENT SYNC 
 
 function Engagement_Sync()
     while Start_Engine do
         local player = windower.ffxi.get_player()
 
         if player then
-            --------------------------------------------------------
-            -- Prune the aggro queue: drop anything that's died,
+                       -- Prune the aggro queue: drop anything that's died,
             -- despawned, or been claimed by someone else in the
             -- meantime -- other people are often around, and there's
             -- no point queuing up a fight with something someone else
             -- already has. Just falls through to the next entry.
-            --------------------------------------------------------
-            for i = #aggro_queue, 1, -1 do
+                       for i = #aggro_queue, 1, -1 do
                 local candidate = windower.ffxi.get_mob_by_id(aggro_queue[i])
                 if not candidate
                     or not candidate.valid_target
@@ -443,8 +409,7 @@ function Engagement_Sync()
                 and current.distance and math.sqrt(current.distance) <= 5
 
             if not current_ok then
-                --------------------------------------------------------
-                -- Current target's dead/gone -- work through whoever
+                               -- Current target's dead/gone -- work through whoever
                 -- else started hitting us while we were busy, oldest
                 -- first, before falling back to a generic guess. We
                 -- never touch the queue while current_ok is true, so
@@ -452,8 +417,7 @@ function Engagement_Sync()
                 -- joining in -- finish the kill, then deal with it.
                 -- (Already-claimed-by-someone-else entries were pruned
                 -- above, so anything left here is fair game.)
-                --------------------------------------------------------
-                local switched = false
+                               local switched = false
 
                 while #aggro_queue > 0 and not switched do
                     local candidate_id = table.remove(aggro_queue, 1)
@@ -486,10 +450,8 @@ function Engagement_Sync()
     end
 end
 
-
-------------------------------------------------------------
--- OUTGOING PACKETS
-------------------------------------------------------------
+ 
+-- OUTGOING PACKETS 
 
 windower.register_event('outgoing chunk', function(id, data)
     if id ~= 0x015 then return end
@@ -497,10 +459,8 @@ windower.register_event('outgoing chunk', function(id, data)
     PlayerH = action.Rotation
 end)
 
-
-------------------------------------------------------------
--- STATUS CHANGE LISTENERS
-------------------------------------------------------------
+ 
+-- STATUS CHANGE LISTENERS 
 
 windower.register_event('status change', function(new_status_id)
     if new_status_id == 1 then -- Engaged
@@ -508,10 +468,8 @@ windower.register_event('status change', function(new_status_id)
     end
 end)
 
-
-------------------------------------------------------------
--- COMMANDS
-------------------------------------------------------------
+ 
+-- COMMANDS 
 
 windower.register_event('addon command', function(...)
     local raw_args = {...}
@@ -669,10 +627,8 @@ windower.register_event('addon command', function(...)
     end
 end)
 
-
-------------------------------------------------------------
--- WEAPONSKILLS
-------------------------------------------------------------
+ 
+-- WEAPONSKILLS 
 
 function Next_WS()
     local closers = Get_WS_Closers()
@@ -682,10 +638,8 @@ function Next_WS()
     return ws
 end
 
-
-------------------------------------------------------------
--- HEADING / MOVEMENT
-------------------------------------------------------------
+ 
+-- HEADING / MOVEMENT 
 
 function HeadingTo(x, y)
     local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
@@ -704,10 +658,8 @@ function TurnToTarget()
     end
 end
 
-
-------------------------------------------------------------
--- ORIGIN DISTANCE
-------------------------------------------------------------
+ 
+-- ORIGIN DISTANCE 
 
 function Origin_Distance(x, y, z)
     if not origin_x then return math.huge end
@@ -806,10 +758,8 @@ function Path_To_Origin()
     end
 end
 
-
-------------------------------------------------------------
--- TARGETING HELPERS
-------------------------------------------------------------
+ 
+-- TARGETING HELPERS 
 
 function Find_Named_Target(target_name)
     local mob_array = windower.ffxi.get_mob_array()
@@ -887,8 +837,7 @@ function Find_Nearest_Target()
     return -1
 end
 
-
-------------------------------------------------------------
+ 
 -- PARTY-AWARE TARGET PRIORITY
 --
 -- Plain nearest-unclaimed autotargeting doesn't know or care what
@@ -908,8 +857,7 @@ end
 --
 -- Only used for plain autotarget (no settings.target name set) --
 -- an explicit named target is a deliberate override and always
--- wins outright.
-------------------------------------------------------------
+-- wins outright. 
 
 function Get_Party_Claim_Ids()
     local ids = {}
@@ -992,10 +940,8 @@ function Choose_Target(party_ids)
     return Find_Nearest_Target()
 end
 
-
-------------------------------------------------------------
--- MONITORS
-------------------------------------------------------------
+ 
+-- MONITORS 
 
 local FOLLOW_MELEE_RANGE = 3
 
@@ -1145,12 +1091,9 @@ function Targeting()
     end
 end
 
-
-------------------------------------------------------------
--- COMBAT
-------------------------------------------------------------
-
-------------------------------------------------------------
+ 
+-- COMBAT 
+ 
 -- DNC ROTATION
 --
 -- Priority order:
@@ -1162,8 +1105,7 @@ end
 --      pending, set at every WS-fire site).
 --   3. Box Step -- keep landing it (each successful land is +1
 --      Finishing Move, read straight off the stacked self-buff)
---      until we're at 5 stacks.
-------------------------------------------------------------
+--      until we're at 5 stacks. 
 
 function Try_DNC_Actions()
     local player = windower.ffxi.get_player()
@@ -1307,10 +1249,8 @@ function Combat()
     end
 end
 
-
-------------------------------------------------------------
--- SPELL / ABILITY HELPERS
-------------------------------------------------------------
+ 
+-- SPELL / ABILITY HELPERS 
 
 function Is_Blacklisted(name)
     if not name then return false end
@@ -1387,10 +1327,8 @@ function Cast_Ability(ability_name)
     isBusy = Action_Delay
 end
 
-
-------------------------------------------------------------
--- BUFF SYSTEM
-------------------------------------------------------------
+ 
+-- BUFF SYSTEM 
 
 function Buff_Tick()
     if not settings.buffs_active or not active_profile then return end
@@ -1762,10 +1700,8 @@ function Buff_Monitor()
     end
 end
 
-
-------------------------------------------------------------
--- CURE BOT
-------------------------------------------------------------
+ 
+-- CURE BOT 
 
 function Party_Has_WHM()
     local party = windower.ffxi.get_party()
@@ -1789,8 +1725,7 @@ function Cure_Bot_Tick()
         cure_active = not Party_Has_WHM()
     end
 
-    --------------------------------------------------------
-    -- FAILSAFE CURING
+       -- FAILSAFE CURING
     --
     -- Some jobs (RDM, etc.) aren't the intended healer -- there's
     -- normally a WHM trust/player on hand -- but if someone drops
@@ -1802,8 +1737,7 @@ function Cure_Bot_Tick()
     -- competes with or duplicates the real healer's job -- it's
     -- purely there to keep the party alive if the real one drops
     -- the ball.
-    --------------------------------------------------------
-    local failsafe = false
+       local failsafe = false
     if not cure_active and active_profile.emergency_cure then
         cure_active = true
         failsafe = true
@@ -1865,10 +1799,8 @@ function Cure_Monitor()
     end
 end
 
-
-------------------------------------------------------------
--- TRUST RESUMMON
-------------------------------------------------------------
+ 
+-- TRUST RESUMMON 
 
 local tracked_trusts      = {}
 local trust_resummon_last = {}
@@ -1933,10 +1865,8 @@ function Trust_Monitor()
     end
 end
 
-
-------------------------------------------------------------
--- BUFF LIST CONVERTER
-------------------------------------------------------------
+ 
+-- BUFF LIST CONVERTER 
 
 function convert_buff_list(bufflist)
     local buffs = {}
@@ -1952,9 +1882,7 @@ function convert_buff_list(bufflist)
     return buffs
 end
 
-
-------------------------------------------------------------
--- INIT
-------------------------------------------------------------
+ 
+-- INIT 
 
 Update_Job_Profile()

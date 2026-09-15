@@ -2,10 +2,8 @@
 -- Edit this file to customize weapon skills, buffs, food, and targeting.
 -- Reload in-game with: //lazy reload
 
-
-------------------------------------------------------------
--- WEAPON SKILLS
-------------------------------------------------------------
+ 
+-- WEAPON SKILLS 
 
 -- Weapon skill used to open a skillchain.
 -- Format: {ws_name, minimum_tp}
@@ -21,20 +19,16 @@ ws_sc_closers = {
 	'Savage Blade',
 }
 
-
-------------------------------------------------------------
--- MAGIC BURST
-------------------------------------------------------------
+ 
+-- MAGIC BURST 
 
 -- When true, settings.spell only fires into an already-open
 -- skillchain window for magic burst damage.
 
 magic_burst_active = true
 
-
-------------------------------------------------------------
--- SPELL BLACKLIST
-------------------------------------------------------------
+ 
+-- SPELL BLACKLIST 
 
 -- Mobs Lazy should NEVER cast settings.spell on.
 -- Names are matched case-insensitively.
@@ -43,10 +37,8 @@ spell_blacklist = {
 	'Locus Colibri',
 }
 
-
-------------------------------------------------------------
--- DISPEL WHITELIST
-------------------------------------------------------------
+ 
+-- DISPEL WHITELIST 
 
 -- Mobs Lazy is allowed to safety-cast Dispel (or Finale, for BRD)
 -- on. Matched as a case-insensitive substring against the target's
@@ -59,10 +51,8 @@ dispel_whitelist = {
 	'Crab',
 }
 
-
-------------------------------------------------------------
--- HASTE BLACKLIST
-------------------------------------------------------------
+ 
+-- HASTE BLACKLIST 
 
 -- Players who never receive Haste II from Lazy, no matter what.
 -- Names are matched case-insensitively.
@@ -78,16 +68,14 @@ haste_blacklist = {
 	
 }
 
-
-------------------------------------------------------------
--- TARGETING
-------------------------------------------------------------
+ 
+-- TARGETING 
 
 targeting = {
 
-	--------------------------------------------------------
+	      ---------
 	-- MONSTERS LAZY IS ALLOWED TO TARGET
-	--------------------------------------------------------
+	      ---------
 
 	monsters = {
 		'Colibri',
@@ -96,9 +84,9 @@ targeting = {
 	},
 
 
-	--------------------------------------------------------
+	      ---------
 	-- TARGETING RULES
-	--------------------------------------------------------
+	      ---------
 
 	-- Only target mobs that nobody has claimed.
 	only_unclaimed = true,
@@ -110,10 +98,8 @@ targeting = {
 	within_origin = true,
 }
 
-
-------------------------------------------------------------
--- NEEDED BUFFS
-------------------------------------------------------------
+ 
+-- NEEDED BUFFS 
 
 -- Buffs to maintain before weapon skilling.
 -- Applied in order — first missing and off cooldown wins.
@@ -125,10 +111,8 @@ targeting = {
 
 needed_buffs = {}
 
-
-------------------------------------------------------------
--- SUBJOB ABILITIES
-------------------------------------------------------------
+ 
+-- SUBJOB ABILITIES 
 
 -- Master switch. Lazy.lua checks this before ever looking at
 -- subjob_abilities below -- if this is false (or missing, which
@@ -170,10 +154,8 @@ subjob_abilities = {
 	},
 }
 
-
-------------------------------------------------------------
--- SELF ABILITY DEBUG
-------------------------------------------------------------
+ 
+-- SELF ABILITY DEBUG 
 
 -- Set to true only when debugging subjob/self abilities.
 -- When true, Lazy prints ability detection information
@@ -181,10 +163,8 @@ subjob_abilities = {
 
 debug_self_abilities = false
 
-
-------------------------------------------------------------
--- FOOD
-------------------------------------------------------------
+ 
+-- FOOD 
 
 -- Food item used when 'Food' is included in needed_buffs.
 

@@ -1,17 +1,15 @@
-------------------------------------------------------------
--- SCH JOB PROFILE
-------------------------------------------------------------
+    
+-- SCH JOB PROFILE 
 --
 -- Scholar -- magic burst spell tiers, backup cure bot when no WHM.
 --
--- Loaded by Lazy.lua into JOB_PROFILES.SCH
-------------------------------------------------------------
+-- Loaded by Lazy.lua into JOB_PROFILES.SCH 
 
 JOB_PROFILES.SCH = {
 
-	--------------------------------------------------------
+	      ---------
 	-- MELEE / ENGAGE SETTINGS
-	--------------------------------------------------------
+	      ---------
 
 	auto_engage = false,
 	use_weaponskills = false,
