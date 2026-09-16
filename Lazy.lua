@@ -60,6 +60,9 @@ local ws_index = 1
 local PlayerH = 0
 local engaged_since = nil
 local is_resting = false
+-- DNC rotation state (dnc_flourish_pending, DNC_WALTZ_TIERS) and
+-- Try_DNC_Actions() now live in DNCQueen.lua.
+-- CAST TRACKING 
 local self_buff_last_cast = {}
 local self_ability_last_cast = {}
 local haste_last_cast = {}
@@ -70,6 +73,7 @@ local refresh_last_cast = {}
 local party_buff_last_cast = {}
 local entrust_last_cast = {}
 local pending_cast = nil
+-- JOB STATE 
 current_job = nil
 active_profile = nil
 -- JOB PROFILES 
@@ -207,6 +211,7 @@ local last_damage_source_id = nil
 local last_damage_taken_time = nil
 local last_damage_kind = nil
 local death_reported = false
+local fleeing_eft_id = nil -- non-nil while actively running away from an Eft
 -- Aggro queue: ids of things that have hit us that AREN'T our current
 -- <t>. Adds go on the end as they hit us; we don't touch them while our
 -- current target is still alive -- finish that fight first, then work
@@ -486,10 +491,11 @@ windower.register_event('addon command', function(...)
         party_activity = {}
         temp_assist_mob_id = nil
         is_resting = false
-        -- STUPIDITY FIXER
-        if not settings.autotarget then
+        fleeing_eft_id = nil
+-- DEFAULT MODE
+        if settings.assist == '' and not settings.autotarget then
             settings.autotarget = true
-            windower.add_to_chat(207, '[Lazy] Autotarget was off -- turned it back on.')
+            windower.add_to_chat(207, '[Lazy] No mode selected -- defaulting to leader.')
         end
         Update_Job_Profile()
         Snapshot_Trusts()
@@ -565,7 +571,8 @@ windower.register_event('addon command', function(...)
         end
         return
     end
-    -- LEADER / FOLLOWER 
+-- LEADER / FOLLOWER 
+
     if command == 'leader' then
         settings.assist = ''
         settings.autotarget = true
@@ -791,7 +798,6 @@ function Find_Nearest_Target()
     return -1
 end
 -- PARTY-AWARE TARGET PRIORITY
--- Target priority:   1. Current legitimate target.    2. Party member's target.  3. Nearest unclaimed whitelist target.  Used only for plain autotarget. Named targets always override. 
 function Get_Party_Claim_Ids()
     local ids = {}
     local party = windower.ffxi.get_party()
@@ -1284,7 +1290,6 @@ function Buff_Tick()
     end
     -- 3. SELF BUFFS
     for _, buff in ipairs(active_profile.self_buffs or {}) do
-        -- buff.name may be a spell or priority-ordered fallback list.
         local names = type(buff.name) == 'table' and buff.name or {buff.name}
         local key = names[1]
         local interval = (buff.interval or 20) * 60
@@ -1588,7 +1593,8 @@ function Cure_Bot_Tick()
     if cure_active and active_profile.cure_bot_requires_buff then
         cure_active = buffactive[active_profile.cure_bot_requires_buff] and true or false
     end
-    -- FAILSAFE CURING Emergency cure for low HP when the profile isn't already healing.
+    -- FAILSAFE CURING
+    -- Emergency cure for low HP when the profile isn't already healing.
     local failsafe = false
     if not cure_active and active_profile.emergency_cure then
         cure_active = true
@@ -1639,9 +1645,9 @@ function Cure_Monitor()
         coroutine.sleep(0.5)
     end
 end
--- Rest Logic
+-- REST 
 local REST_MP_THRESHOLD = 500 -- absolute MP, not a percentage
-local REST_THREAT_WINDOW = 10 -- seconds; how recent a hit still counts as "being hit"
+local REST_THREAT_WINDOW = 10 
 local function Being_Hit()
     return last_damage_taken_time and (os.clock() - last_damage_taken_time) <= REST_THREAT_WINDOW
 end
@@ -1688,7 +1694,6 @@ function Rest_Monitor()
                     is_resting = true
                 end
             end
-            -- Being hit and not already fighting the culprit: go kill it before it kills us, instead of just standing there.
             if threat and last_damage_source_id then
                 local current = windower.ffxi.get_mob_by_target('t')
                 local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
@@ -1700,7 +1705,7 @@ function Rest_Monitor()
                 end
             end
         elseif is_resting then
-            -- Engaged, dead, zoning, rest toggled off, whatever don't stay kneeling into something that needs us moving.
+            -- Engaged, dead, zoning, rest toggled off, whatever --
             windower.send_command('input /heal off')
             is_resting = false
         end
