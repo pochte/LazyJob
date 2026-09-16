@@ -17,6 +17,18 @@ Simple helper for farming XP/CP/Trash items. So far includes:
 * //lazy start
 * //lazy stop
 * //lazy reload
+* //lazy save
+* //lazy show
+* //lazy leader
+* //lazy follower <player>
+* //lazy autotarget on|off
+* //lazy target <name>
+* //lazy assist <player>
+* //lazy buffs on|off
+* //lazy cure on|off
+* //lazy rest on|off
+* //lazy range <yalms>
+* //lazy retrust
 
 #### //lazy start
 Starts the actual helper
@@ -26,6 +38,31 @@ Stops the helper
 
 #### //lazy reload
 Reloads the options from the settings.xml
+
+#### //lazy save
+Saves the current settings for the current character.
+
+#### //lazy show
+Displays the current Lazy status, including main job, assist target,
+autotarget state, spell/WS settings, buffs, cure bot, rest, and current
+leader/follower mode.
+
+#### //lazy leader
+Switches Lazy into leader mode. Clears the assist target and enables
+autotarget. Lazy will select targets itself.
+
+#### //lazy follower "Player Name"
+Switches Lazy into follower mode. Sets the specified player as the assist
+target and disables autotarget. Lazy follows the assisted player's targets
+instead of selecting its own.
+
+Leader and follower are atomic mode switches: each command sets both the
+assist and autotarget states together, preventing a stale assist setting or
+autotarget state from putting Lazy into an unintended mode.
+
+#### //lazy autotarget on|off
+Enables or disables automatic target selection. This is the granular version
+of the leader/follower mode controls.
 
 #### //lazy target "Some Monster"
 Sets/Changes the current auto target monster, Single mob only for now
@@ -58,6 +95,17 @@ then Cure II, under 400 tries Cure II/III/Cure, up through Cure VI past
 1400. Each tier tries its spells in order and stops if none are up, rather
 than getting stuck retrying one spell that's on cooldown. Also fires Auspice
 (or whatever's in that profile's `job_abilities`) the instant it's off cooldown.
+
+#### //lazy rest on|off
+Toggles automatic resting (default: on). When enabled, Lazy uses `/heal`
+when your MP drops below 500 and you are not currently engaged or under
+recent attack pressure. Resting pauses when you are hit, when a self-buff
+needs to be maintained, or when a skillchain magic-burst window is pending.
+Resting also stops automatically when you become engaged, die, zone, or
+disable the feature.
+
+If Lazy is hit while resting and the attacker is a valid, unclaimed target
+(or claimed by you), Lazy will target and engage that attacker.
 
 #### //lazy retrust
 Lazy snapshots which party slots are Trusts when you `//lazy start`, and

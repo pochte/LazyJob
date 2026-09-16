@@ -1,9 +1,7 @@
 -- Skillchain detection for Lazy
 -- Logic ported from SkillChains by Ivaar
-
 require('actions')
 local skills = dofile(windower.addon_path .. 'skills.lua')
-
 local sc_info = {
     Radiance = {'Wind','Fire','Lightning','Light',lvl=4},
     Umbra = {'Earth','Ice','Water','Dark',lvl=4},
@@ -79,9 +77,7 @@ local sc_info = {
         Detonation={1,'Detonation'}, lvl=1
     },
 }
- 
 -- SKILLCHAIN MESSAGE IDS 
-
 local skillchain_ids = {
     [288]=true,[289]=true,[290]=true,[291]=true,[292]=true,[293]=true,[294]=true,[295]=true,
     [296]=true,[297]=true,[298]=true,[299]=true,[300]=true,[301]=true,
@@ -89,16 +85,12 @@ local skillchain_ids = {
     [393]=true,[394]=true,[395]=true,[396]=true,[397]=true,
     [767]=true,[768]=true,[769]=true,[770]=true,
 }
- 
 -- ACTION MESSAGE IDS 
-
 local message_ids = {
     [110]=true,[185]=true,[187]=true,[317]=true,[802]=true,
 }
- 
 -- ACTION CATEGORIES THAT CAN CREATE
 -- SKILLCHAIN RESONANCE 
-
 local ws_categories = {
     weaponskill_finish=true,
     ranged_finish=true,
@@ -107,7 +99,6 @@ local ws_categories = {
     avatar_tp_finish=true,
     pet_tp_finish=true,
 }
- 
 -- ACTIVE SKILLCHAINS
 --
 -- target_id ->
@@ -118,26 +109,20 @@ local ws_categories = {
 --     step   = number,
 --     closed = boolean,
 -- } 
-
 local resonating = {}
- 
 -- CHECK WHETHER TWO SETS OF SC PROPERTIES
 -- CAN COMBINE 
-
 local function check_props(old,new)
     for k=1,#old do
         local first=old[k]
         local combo=sc_info[first]
-
         if combo then
             for i=1,#new do
                 local second=new[i]
                 local result=combo[second]
-
                 if result then
                     return unpack(result)
                 end
-
                 if #old > 3
                     and combo.lvl == sc_info[second]
                     and sc_info[second].lvl then
@@ -147,12 +132,9 @@ local function check_props(old,new)
         end
     end
 end
- 
 -- CREATE / UPDATE ACTIVE SC 
-
 local function apply_properties(target,active,delay,step,closed)
     local clock=os.clock()
-
     resonating[target] = {
         active=active,
         delay=clock+delay,
@@ -161,61 +143,46 @@ local function apply_properties(target,active,delay,step,closed)
         closed=closed or false,
     }
 end
- 
 -- TRUE WHEN SC WINDOW EXISTS
 --
 -- This includes both:
 --
 -- RED  "Wait"
 -- GREEN "Go!" 
-
 function sc_active(target_id)
     local reson=resonating[target_id]
-
     if not reson then
         return false
     end
-
     if reson.closed then
         resonating[target_id]=nil
         return false
     end
-
     local now=os.clock()
-
     if now > reson.times then
         resonating[target_id]=nil
         return false
     end
-
     return true
 end
- 
 -- TRUE WHEN SC WINDOW IS IN THE
 -- GREEN "GO!" / BURST PHASE 
-
 function sc_ready(target_id)
     local reson=resonating[target_id]
-
     if not reson then
         return false
     end
-
     if reson.closed then
         resonating[target_id]=nil
         return false
     end
-
     local now=os.clock()
-
     if now > reson.times then
         resonating[target_id]=nil
         return false
     end
-
     return now >= reson.delay
 end
- 
 -- GET CURRENT SKILLCHAIN PROPERTY
 --
 -- Examples:
@@ -230,33 +197,25 @@ end
 --
 -- This is used by the magic-burst logic
 -- in lazy.lua. 
-
 function sc_get_property(target_id)
     local reson=resonating[target_id]
-
     if not reson then
         return nil
     end
-
     if reson.closed then
         resonating[target_id]=nil
         return nil
     end
-
     local now=os.clock()
-
     if now > reson.times then
         resonating[target_id]=nil
         return nil
     end
-
     if not reson.active then
         return nil
     end
-
     return reson.active[1]
 end
- 
 -- GET SKILLCHAIN'S COMPONENT ELEMENTS
 --
 -- sc_get_property() above only returns the skillchain's own
@@ -271,134 +230,93 @@ end
 -- order sc_info defines it, which is highest-bonus-first), so
 -- magicburst.lua can try every element the chain actually
 -- supports instead of guessing a single one. 
-
 function sc_get_elements(target_id)
     local sc_name=sc_get_property(target_id)
-
     if not sc_name then
         return nil
     end
-
     local combo=sc_info[sc_name]
-
     if not combo then
         return nil
     end
-
     local elements={}
-
     for i=1,#combo do
         elements[#elements+1]=combo[i]
     end
-
     return elements
 end
- 
 -- GET MAIN WEAPON NAME 
-
 local function get_main_weapon_name()
     local items=windower.ffxi.get_items()
-
     if not items or not items.equipment then
         return ''
     end
-
     local main_idx=items.equipment.main
-
     if not main_idx or main_idx == 0 then
         return ''
     end
-
     local main_item=windower.ffxi.get_items(0,main_idx)
-
     if not main_item or not main_item.id or main_item.id == 0 then
         return ''
     end
-
     local res_item=res.items[main_item.id]
-
     return res_item and res_item.en or ''
 end
- 
 -- GET SKILLCHAIN PROPERTIES FOR A WS 
-
 local function get_sc_props(skill,weapon_name)
     if skill.aeonic and skill.weapon == weapon_name then
         local props={}
-
         for i,v in ipairs(skill.skillchain) do
             props[i]=v
         end
-
         props[#props+1]=skill.aeonic
         return props
     end
-
     return skill.skillchain
 end
- 
 -- GET AVAILABLE WS THAT CAN CLOSE
 -- THE CURRENT SKILLCHAIN 
-
 function sc_get_ws(target_id)
     local reson=resonating[target_id]
-
     if not reson then
         return {}
     end
-
     local ws_ids=windower.ffxi.get_abilities().weapon_skills
     local main_name=get_main_weapon_name()
     local result={}
-
     for k=1,#ws_ids do
         local id=ws_ids[k]
         local skill=skills.weapon_skills[id]
-
         if skill then
             local props=get_sc_props(skill,main_name)
             local lv,prop=check_props(reson.active,props)
-
             if prop then
                 result[#result+1]=skill.en
             end
         end
     end
-
     return result
 end
- 
 -- ACTION PACKET HANDLER 
-
 local function action_handler(act)
     local ap=ActionPacket.new(act)
     local category=ap:get_category_string()
-
     if not ws_categories[category] or act.param == 0 then
         return
     end
-
     local target=ap:get_targets()()
-
     if not target then
         return
     end
-
     local action=target:get_actions()()
-
     if not action then
         return
     end
-
     local message_id=action:get_message_id()
     local add_effect=action:get_add_effect()
-
     local param,resource,action_id,interruption,conclusion=action:get_spell()
-
     local ability=skills[resource] and skills[resource][action_id]
-
        -- NEW SKILLCHAIN FORMED
-   
     if add_effect and skillchain_ids[add_effect.message_id] then
         local sc_name=add_effect.animation:ucfirst()
         local sc_data=sc_info[sc_name]
@@ -407,7 +325,6 @@ local function action_handler(act)
         local delay=ability and ability.delay or 3
         local step=(reson and reson.step or 1)+1
         local closed=step > 5 or level == 4
-
         apply_properties(
             target.id,
             {sc_name},
@@ -415,16 +332,12 @@ local function action_handler(act)
             step,
             closed
         )
-
        -- INITIAL WEAPONSKILL / ABILITY
-   
     elseif ability and message_ids[message_id] then
         local props=ability.skillchain
-
         if act.actor_id == windower.ffxi.get_player().id then
             props=get_sc_props(ability,get_main_weapon_name())
         end
-
         apply_properties(
             target.id,
             props,
@@ -434,12 +347,9 @@ local function action_handler(act)
         )
     end
 end
- 
 -- ACTION PACKET LISTENER 
-
 ActionPacket.open_listener(function(act)
     local ok,err=pcall(action_handler,act)
-
     if not ok then
         windower.add_to_chat(
             2,
@@ -447,20 +357,14 @@ ActionPacket.open_listener(function(act)
         )
     end
 end)
- 
 -- CLEAN UP EXPIRED SKILLCHAINS 
-
 local prerender_next=0
-
 windower.register_event('prerender',function()
     local now=os.clock()
-
     if now < prerender_next then
         return
     end
-
     prerender_next=now+0.1
-
     for id,reson in pairs(resonating) do
         if now > reson.times then
             resonating[id]=nil
