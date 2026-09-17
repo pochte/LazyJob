@@ -33,17 +33,17 @@
 
 local SC_ELEMENTS = {
 
-	      ---------
+	      
 	-- LEVEL 4
-	      ---------
+	      
 
 	Radiance      = 'Light',
 	Umbra         = 'Darkness',
 
 
-	      ---------
+	      
 	-- LEVEL 3
-	      ---------
+	      
 
 	Light         = 'Light',
 	Darkness      = 'Darkness',
@@ -54,9 +54,9 @@ local SC_ELEMENTS = {
 	Fusion        = 'Fire',
 
 
-	      ---------
+	      
 	-- LEVEL 2
-	      ---------
+	      
 
 	Compression   = 'Darkness',
 	Liquefaction  = 'Fire',
@@ -128,9 +128,9 @@ function Get_Burst_Spell(target)
 	end
 
 
-	      ---------
+	      
 	-- Determine SC element.
-	      ---------
+	      
 
 	local element =
 		Get_SC_Element(target)
@@ -140,9 +140,9 @@ function Get_Burst_Spell(target)
 	end
 
 
-	      ---------
+	      
 	-- Get spells for this element.
-	      ---------
+	      
 
 	local candidates =
 		active_profile.burst_spells[element]
@@ -152,9 +152,9 @@ function Get_Burst_Spell(target)
 	end
 
 
-	      ---------
+	      
 	-- Player / recasts.
-	      ---------
+	      
 
 	local player =
 		windower.ffxi.get_player()
@@ -167,9 +167,9 @@ function Get_Burst_Spell(target)
 		windower.ffxi.get_spell_recasts()
 
 
-	      ---------
+	      
 	-- Find strongest available spell.
-	      ---------
+	      
 
 	for _, spell_name in ipairs(candidates) do
 
@@ -205,9 +205,9 @@ end
 
 function Try_Magic_Burst()
 
-	      ---------
+	      
 	-- Job must have magic burst enabled.
-	      ---------
+	      
 
 	if not active_profile
 		or not active_profile.magic_burst then
@@ -216,9 +216,9 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- Target.
-	      ---------
+	      
 
 	local target =
 		windower.ffxi.get_mob_by_target('t')
@@ -232,36 +232,36 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- Blacklist.
-	      ---------
+	      
 
 	if Is_Blacklisted(target.name) then
 		return false
 	end
 
 
-	      ---------
+	      
 	-- There must be an active skillchain.
-	      ---------
+	      
 
 	if not sc_active(target.id) then
 		return false
 	end
 
 
-	      ---------
+	      
 	-- Must be inside the burst window.
-	      ---------
+	      
 
 	if not sc_ready(target.id) then
 		return false
 	end
 
 
-	      ---------
+	      
 	-- Don't interrupt another action.
-	      ---------
+	      
 
 	if isCasting
 		or isBusy > 0 then
@@ -270,18 +270,18 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- Don't try to cast while moving.
-	      ---------
+	      
 
 	if Is_Moving() then
 		return false
 	end
 
 
-	      ---------
+	      
 	-- Find the strongest available spell.
-	      ---------
+	      
 
 	local spell_name =
 		Get_Burst_Spell(target)
@@ -291,9 +291,9 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- Resolve spell.
-	      ---------
+	      
 
 	local spell =
 		res.spells:with(
@@ -306,9 +306,9 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- Final MP / recast check.
-	      ---------
+	      
 
 	local player =
 		windower.ffxi.get_player()
@@ -329,9 +329,9 @@ function Try_Magic_Burst()
 	end
 
 
-	      ---------
+	      
 	-- CAST
-	      ---------
+	      
 
 	windower.send_command(
 		'input /ma "'..

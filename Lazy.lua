@@ -60,8 +60,6 @@ local ws_index = 1
 local PlayerH = 0
 local engaged_since = nil
 local is_resting = false
--- DNC rotation state (dnc_flourish_pending, DNC_WALTZ_TIERS) and
--- Try_DNC_Actions() now live in DNCQueen.lua.
 -- CAST TRACKING 
 local self_buff_last_cast = {}
 local self_ability_last_cast = {}
@@ -211,11 +209,6 @@ local last_damage_source_id = nil
 local last_damage_taken_time = nil
 local last_damage_kind = nil
 local death_reported = false
-local fleeing_eft_id = nil -- non-nil while actively running away from an Eft
--- Aggro queue: ids of things that have hit us that AREN'T our current
--- <t>. Adds go on the end as they hit us; we don't touch them while our
--- current target is still alive -- finish that fight first, then work
--- through whoever else started swinging on us, oldest first.
 local aggro_queue = {}
 local AGGRO_QUEUE_CAP = 10
 local function Resolve_Attack_Name(param)
@@ -491,8 +484,8 @@ windower.register_event('addon command', function(...)
         party_activity = {}
         temp_assist_mob_id = nil
         is_resting = false
-        fleeing_eft_id = nil
--- DEFAULT MODE
+        -- DEFAULT MODE
+        -- purpose and break the atomic leader/follower invariant.
         if settings.assist == '' and not settings.autotarget then
             settings.autotarget = true
             windower.add_to_chat(207, '[Lazy] No mode selected -- defaulting to leader.')
@@ -571,8 +564,7 @@ windower.register_event('addon command', function(...)
         end
         return
     end
--- LEADER / FOLLOWER 
-
+    -- LEADER / FOLLOWER 
     if command == 'leader' then
         settings.assist = ''
         settings.autotarget = true
@@ -798,6 +790,11 @@ function Find_Nearest_Target()
     return -1
 end
 -- PARTY-AWARE TARGET PRIORITY
+-- Target priority:
+--   1. Current legitimate target.
+--   2. Party member's target.
+--   3. Nearest unclaimed whitelist target.
+-- Used only for plain autotarget. Named targets always override. 
 function Get_Party_Claim_Ids()
     local ids = {}
     local party = windower.ffxi.get_party()
@@ -912,6 +909,10 @@ function SC_Monitor()
                     if fired then break end
                     for _, closer in ipairs(Get_WS_Closers() or {}) do
                         if ws == closer then
+                            if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then
+                                fired = true
+                                break
+                            end
                             windower.send_command('input /ws "' .. closer .. '" <t>')
                             isBusy = Action_Delay
                             dnc_flourish_pending = true
@@ -1001,6 +1002,7 @@ function Targeting()
     end
 end
 -- COMBAT
+-- (DNC rotation -- Try_DNC_Actions() -- now lives in DNCQueen.lua)
 function Combat()
     local player = windower.ffxi.get_player()
     if not player then return end
@@ -1043,6 +1045,7 @@ function Combat()
         and starter and starter[1]
         and active_profile.use_weaponskills ~= false
     then
+        if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then return end
         windower.send_command('input /ws "' .. starter[1] .. '" <t>')
         isBusy = Action_Delay
         dnc_flourish_pending = true
@@ -1078,6 +1081,7 @@ function Combat()
         local tp = player.vitals.tp
         if sc_active and not sc_active(target.id) and starter and tp >= starter[2]
             and active_profile.use_weaponskills ~= false then
+            if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then return end
             windower.send_command('input /ws "' .. starter[1] .. '" <t>')
             isBusy = Action_Delay
             dnc_flourish_pending = true
@@ -1225,6 +1229,8 @@ function Buff_Tick()
         end
     end
     -- 1B. DISPEL
+    -- Safety-net cast on the configured whitelist at set intervals.
+    -- Uses case-insensitive substring matching; require_buff still applies.
     if active_profile.dispel then
         local dispel_cfg = active_profile.dispel
         local dispel_ok = true
@@ -1254,6 +1260,7 @@ function Buff_Tick()
         end
     end
     -- 1C. MOB-SPECIFIC SPELLS
+    -- Casts the configured spell/fallback on matching mobs when ready.
     if active_profile.mob_spells then
         local target = windower.ffxi.get_mob_by_target('t')
         if target and target.name and target.hpp and target.hpp > 0 then
@@ -1290,6 +1297,7 @@ function Buff_Tick()
     end
     -- 3. SELF BUFFS
     for _, buff in ipairs(active_profile.self_buffs or {}) do
+        -- buff.name may be a spell or priority-ordered fallback list.
         local names = type(buff.name) == 'table' and buff.name or {buff.name}
         local key = names[1]
         local interval = (buff.interval or 20) * 60
@@ -1647,7 +1655,15 @@ function Cure_Monitor()
 end
 -- REST 
 local REST_MP_THRESHOLD = 500 -- absolute MP, not a percentage
-local REST_THREAT_WINDOW = 10 
+local REST_THREAT_WINDOW = 10 -- seconds; how recent a hit still counts as "being hit"
+local REST_ELIGIBLE_JOBS = {
+    WHM = true,
+    RDM = true,
+    BLM = true,
+    GEO = true,
+    SCH = true,
+    SMN = true,
+}
 local function Being_Hit()
     return last_damage_taken_time and (os.clock() - last_damage_taken_time) <= REST_THREAT_WINDOW
 end
@@ -1678,11 +1694,28 @@ end
 function Rest_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
-        if player and settings.rest_active and player.status ~= 1
-            and player.vitals and player.vitals.hpp and player.vitals.hpp > 0 then
+        local idle_and_alive = player and player.status ~= 1
+            and player.vitals and player.vitals.hpp and player.vitals.hpp > 0
+        if idle_and_alive then
+            local threat = Being_Hit()
+            if threat and last_damage_source_id then
+                local current = windower.ffxi.get_mob_by_target('t')
+                local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
+                if attacker and attacker.valid_target and attacker.hpp and attacker.hpp > 0
+                    and (attacker.claim_id == 0 or attacker.claim_id == player.id)
+                    and (not current or current.id ~= attacker.id) then
+                    windower.add_to_chat(167, '[Lazy] Being hit by ' .. attacker.name .. ' -- engaging.')
+                    windower.send_command('input /target "' .. attacker.name .. '"; input /attack on')
+                end
+            end
+        end
+        if idle_and_alive and settings.rest_active and REST_ELIGIBLE_JOBS[current_job] then
             local mp = player.vitals.mp or 0
             local threat = Being_Hit()
-            local should_pause = threat or Self_Buff_Due() or Skillchain_Burst_Pending()
+            local current_target = windower.ffxi.get_mob_by_target('t')
+            local pursuing_target = current_target and current_target.valid_target
+                and current_target.hpp and current_target.hpp > 0
+            local should_pause = threat or pursuing_target or Self_Buff_Due() or Skillchain_Burst_Pending()
             if is_resting then
                 if should_pause or mp >= REST_MP_THRESHOLD then
                     windower.send_command('input /heal off')
@@ -1694,18 +1727,7 @@ function Rest_Monitor()
                     is_resting = true
                 end
             end
-            if threat and last_damage_source_id then
-                local current = windower.ffxi.get_mob_by_target('t')
-                local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
-                if attacker and attacker.valid_target and attacker.hpp and attacker.hpp > 0
-                    and (attacker.claim_id == 0 or attacker.claim_id == player.id)
-                    and (not current or current.id ~= attacker.id) then
-                    windower.add_to_chat(167, '[Lazy] Being hit by ' .. attacker.name .. ' -- engaging.')
-                    windower.send_command('input /target "' .. attacker.name .. '"; input /attack on')
-                end
-            end
         elseif is_resting then
-            -- Engaged, dead, zoning, rest toggled off, whatever --
             windower.send_command('input /heal off')
             is_resting = false
         end

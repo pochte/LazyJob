@@ -7,23 +7,23 @@
 
 JOB_PROFILES.BLM = {
 
-	      ---------
+	      
 	-- MELEE / ENGAGE SETTINGS
-	      ---------
+	      
 
 	auto_engage = false,
 	use_weaponskills = false,
 
-	      ---------
+	      
 	-- SUPPORT / BUFFS
-	      ---------
+	      
 
 	haste_active = false,
 	self_buffs = {},
 
-	      ---------
+	      
 	-- MAGIC BURST
-	      ---------
+	      
 
 	magic_burst = true,
 

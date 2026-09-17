@@ -59,9 +59,9 @@ haste_blacklist = {
 
 targeting = {
 
-	      ---------
+	      
 	-- MONSTERS LAZY IS ALLOWED TO TARGET
-	      ---------
+	      
 
 	monsters = {
 		'Colibri',
@@ -70,9 +70,9 @@ targeting = {
 	},
 
 
-	      ---------
+	      
 	-- TARGETING RULES
-	      ---------
+	      
 
 	-- Only target mobs that nobody has claimed.
 	only_unclaimed = true,

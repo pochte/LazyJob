@@ -23,7 +23,7 @@ JOB_PROFILES.DNC = {
 		"Rudra's Storm",
 	},
 
-	      ---------
+	      
 	-- STEP / FLOURISH / WALTZ ROTATION
 	--
 	-- Box Step until Finishing Move hits 5 stacks, then
@@ -31,7 +31,7 @@ JOB_PROFILES.DNC = {
 	-- weaponskill, even below 5 stacks). Emergency Curing
 	-- Waltz -- highest tier affordable on current MP --
 	-- takes priority over both any time HP drops to 50%.
-	      ---------
+	      
 
 	dnc_rotation = true,
 

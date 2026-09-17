@@ -7,9 +7,9 @@
 
 JOB_PROFILES.SCH = {
 
-	      ---------
+	      
 	-- MELEE / ENGAGE SETTINGS
-	      ---------
+	      
 
 	auto_engage = false,
 	use_weaponskills = false,

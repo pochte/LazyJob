@@ -7,16 +7,16 @@
 
 JOB_PROFILES.WHM = {
 
-	      ---------
+	      
 	-- MELEE / ENGAGE SETTINGS
-	      ---------
+	      
 
 	auto_engage = false,
 	use_weaponskills = false,
 
-	      ---------
+	      
 	-- BUFFS & SUPPORT
-	      ---------
+	      
 
 	haste_active = false,
 
@@ -27,9 +27,9 @@ JOB_PROFILES.WHM = {
 		{ name = 'Baraero', interval = 300 },
 	},
 
-	      ---------
+	      
 	-- CURE BOT
-	      ---------
+	      
 
 	cure_bot_active = true,
 

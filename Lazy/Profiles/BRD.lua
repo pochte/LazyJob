@@ -7,9 +7,9 @@
 
 JOB_PROFILES.BRD = {
 
-	      ---------
+	      
 	-- MELEE / ENGAGE SETTINGS
-	      ---------
+	      
 
 	auto_engage = false,
 	use_weaponskills = false,
@@ -17,9 +17,9 @@ JOB_PROFILES.BRD = {
 	haste_active = false,
 	self_buffs = {},
 
-	      ---------
+	      
 	-- PARTY SONGS
-	      ---------
+	      
 
 	party_buffs = {
 
