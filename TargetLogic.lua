@@ -22,6 +22,7 @@
 -- file boundaries in Lua -- only globals do. Anything that's genuinely
 -- private to this file (constants, internal-only state) stays local.
 ------------------------------------------------------------
+
 -- ORIGIN / PATHING STATE
 local origin_x = nil
 local origin_y = nil
@@ -33,7 +34,9 @@ local path_last_distance = nil
 local path_last_progress_time = nil
 local path_stuck_alerted = false
 local origin_unreachable_since = nil
+
 -- ORIGIN DISTANCE 
+
 function Origin_Distance(x, y, z)
     if not origin_x then return math.huge end
     if origin_z and z and math.abs(z - origin_z) > origin_z_tolerance then
@@ -41,6 +44,7 @@ function Origin_Distance(x, y, z)
     end
     return math.sqrt((x - origin_x)^2 + (y - origin_y)^2)
 end
+
 function Set_Origin()
     local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
     if not player then return end
@@ -53,17 +57,23 @@ function Set_Origin()
     origin_unreachable_since = nil
     windower.add_to_chat(2, 'Origin set: (' .. math.floor(origin_x) .. ', ' .. math.floor(origin_y) .. ') radius: ' .. origin_radius)
 end
+
 function Path_To_Origin()
     if not origin_x then return end
+
     local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
     if not player then return end
+
     local distance = Origin_Distance(player.x, player.y, player.z)
+
     if distance == math.huge then
         windower.ffxi.run(false)
+
         local now = os.clock()
         if not origin_unreachable_since then
             origin_unreachable_since = now
         end
+
         if (now - origin_unreachable_since) >= ORIGIN_UNREACHABLE_TIMEOUT then
             windower.add_to_chat(2, '[Lazy] Origin unreachable for '
                 .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60)
@@ -71,6 +81,7 @@ function Path_To_Origin()
             Set_Origin()
             return
         end
+
         if not path_stuck_alerted then
             windower.add_to_chat(167, '[Lazy] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after '
                 .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60) .. ' min if still stuck.')
@@ -80,16 +91,21 @@ function Path_To_Origin()
         path_tick = 0
         return
     end
+
     origin_unreachable_since = nil
+
     windower.ffxi.follow(0)
+
     if distance > 3 then
         local now = os.clock()
+
         if not path_last_distance or distance < path_last_distance - PATH_STUCK_EPSILON then
             path_last_distance = distance
             path_last_progress_time = now
             path_stuck_alerted = false
         elseif path_last_progress_time
             and (now - path_last_progress_time) >= PATH_STUCK_TIMEOUT then
+
             windower.ffxi.run(false)
             if not path_stuck_alerted then
                 windower.add_to_chat(167, '[Lazy] Stuck pathing to origin (no progress in ' .. PATH_STUCK_TIMEOUT .. 's) -- stopping autopath.')
@@ -99,6 +115,7 @@ function Path_To_Origin()
             path_tick = 0
             return
         end
+
         path_tick = path_tick + 1
         if path_tick % 4 == 1 then
             windower.ffxi.run(false)
@@ -116,10 +133,13 @@ function Path_To_Origin()
         path_stuck_alerted = false
     end
 end
+ 
 -- TARGETING HELPERS 
+
 function Find_Named_Target(target_name)
     local mob_array = windower.ffxi.get_mob_array()
     local candidates = {}
+
     for key, mob in pairs(mob_array) do
         if mob.distance then
             candidates[#candidates + 1] = {
@@ -129,13 +149,16 @@ function Find_Named_Target(target_name)
             }
         end
     end
+
     table.sort(candidates, function(a, b) return a.dist < b.dist end)
+
     for _, entry in ipairs(candidates) do
         local mob = entry.mob
         local in_range = true
         if origin_x and mob.x then
             in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
         end
+
         if string.lower(mob.name or '') == string.lower(target_name or '')
             and mob.valid_target
             and mob.hpp and mob.hpp > 0
@@ -147,6 +170,7 @@ function Find_Named_Target(target_name)
     end
     return -1
 end
+
 function Is_Targetable_Monster(name)
     if not name then return false end
     for _, monster in ipairs(targeting.monsters or {}) do
@@ -156,9 +180,11 @@ function Is_Targetable_Monster(name)
     end
     return false
 end
+
 function Find_Nearest_Target()
     local mob_array = windower.ffxi.get_mob_array()
     local candidates = {}
+
     for key, mob in pairs(mob_array) do
         if mob.distance then
             candidates[#candidates + 1] = {
@@ -168,7 +194,9 @@ function Find_Nearest_Target()
             }
         end
     end
+
     table.sort(candidates, function(a, b) return a.dist < b.dist end)
+
     for _, entry in ipairs(candidates) do
         local mob = entry.mob
         local valid =
@@ -178,21 +206,26 @@ function Find_Nearest_Target()
             and (not targeting.within_origin or not origin_x or not mob.x
                 or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
             and (not targeting.only_unclaimed or mob.claim_id == 0)
+
         if valid then return entry.key end
     end
     return -1
 end
+ 
 -- PARTY-AWARE TARGET PRIORITY
 -- Target priority:
 --   1. Current legitimate target.
 --   2. Party member's target.
 --   3. Nearest unclaimed whitelist target.
 -- Used only for plain autotarget. Named targets always override. 
+
 function Get_Party_Claim_Ids()
     local ids = {}
     local party = windower.ffxi.get_party()
     if not party then return ids end
+
     local player = windower.ffxi.get_player()
+
     for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
         local m = party[key]
         if m then
@@ -202,24 +235,32 @@ function Get_Party_Claim_Ids()
             end
         end
     end
+
     return ids
 end
+
 function Find_Party_Target(party_ids)
     if not party_ids or next(party_ids) == nil then return nil end
+
     local mob_array = windower.ffxi.get_mob_array()
     if not mob_array then return nil end
+
     for index, mob in pairs(mob_array) do
         if mob.valid_target and mob.hpp and mob.hpp > 0
             and mob.claim_id and party_ids[mob.claim_id] then
+
             local in_range = true
             if origin_x and mob.x then
                 in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
             end
+
             if in_range then return index end
         end
     end
+
     return nil
 end
+
 -- Same idea as Find_Party_Target, but nearest-first rather than
 -- first-found -- used specifically for "my target just died, what's
 -- the closest thing the party's already fighting" (Engagement_Sync),
@@ -227,40 +268,50 @@ end
 -- its index) since the caller needs its name to /target by.
 function Find_Nearest_Party_Claimed_Target(party_ids)
     if not party_ids or next(party_ids) == nil then return nil end
+
     local mob_array = windower.ffxi.get_mob_array()
     if not mob_array then return nil end
+
     local candidates = {}
     for index, mob in pairs(mob_array) do
         if mob.valid_target and mob.hpp and mob.hpp > 0
             and mob.claim_id and party_ids[mob.claim_id]
             and mob.distance then
+
             local in_range = true
             if origin_x and mob.x then
                 in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
             end
+
             if in_range then
                 candidates[#candidates + 1] = { mob = mob, dist = math.sqrt(mob.distance) }
             end
         end
     end
+
     table.sort(candidates, function(a, b) return a.dist < b.dist end)
+
     if candidates[1] then return candidates[1].mob end
     return nil
 end
+
 function Is_Legitimate_Target(mob, expected_name, party_ids)
     if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
         return false
     end
+
     local in_range = true
     if origin_x and mob.x then
         in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
     end
     if not in_range then return false end
+
     local player = windower.ffxi.get_player()
     local claimed_by_us_or_party =
         mob.claim_id == 0
         or (player and mob.claim_id == player.id)
         or (party_ids and party_ids[mob.claim_id])
+
     if expected_name then
         -- A named target is still only legitimate if it's ours,
         -- the party's, or unclaimed -- matching the name alone
@@ -272,24 +323,32 @@ function Is_Legitimate_Target(mob, expected_name, party_ids)
     if claimed_by_us_or_party then
         return true
     end
+
     return Is_Targetable_Monster(mob.name)
 end
+
 function Choose_Target(party_ids)
     local player = windower.ffxi.get_player()
     if not player then return -1 end
+
     local current = windower.ffxi.get_mob_by_target('t')
     if Is_Legitimate_Target(current, nil, party_ids) then
         return current.index
     end
+
     local party_target = Find_Party_Target(party_ids)
     if party_target then return party_target end
+
     return Find_Nearest_Target()
 end
+ 
 -- MONITORS 
+
 local FOLLOW_MELEE_RANGE = 3
 function Follow_Monitor()
     while Start_Engine do
         local target = windower.ffxi.get_mob_by_target('t')
+
         if not target then
             windower.ffxi.follow(0)
         elseif isCasting or isBusy > 0 then
@@ -302,9 +361,11 @@ function Follow_Monitor()
                 windower.ffxi.follow(target.index)
             end
         end
+
         coroutine.sleep(0.2)
     end
 end
+
 -- COMBAT STALL / ASSIST WATCH
 --
 -- Tracks who's actually landing hits, separate from the death-watch
@@ -322,7 +383,8 @@ last_party_damage_to_target = nil
 damage_watch_target_id      = nil
 party_activity              = {}  -- [actor_id] = {last_hit = os.clock(), target_id = mob id}
 temp_assist_mob_id          = nil -- non-nil while temporarily helping someone else's fight
-local function Is_Party_Member(actor_id)
+
+function Is_Party_Member(actor_id)
     if not actor_id then return false end
     local party = windower.ffxi.get_party()
     if not party then return false end
@@ -333,22 +395,28 @@ local function Is_Party_Member(actor_id)
     end
     return false
 end
+
 windower.register_event('incoming chunk', function(id, data)
     if id ~= 0x028 then return end
+
     local action = packets.parse('incoming', data)
     local player = windower.ffxi.get_player()
     if not player then return end
+
     local current    = windower.ffxi.get_mob_by_target('t')
     local current_id = current and current.id
+
     -- New/changed target -- give it a clean 20s grace period instead of
     -- inheriting a stale timer from whatever we were fighting before.
     if damage_watch_target_id ~= current_id then
         damage_watch_target_id      = current_id
         last_party_damage_to_target = current_id and os.clock() or nil
     end
+
     local is_self  = action.Actor == player.id
     local is_party = is_self or Is_Party_Member(action.Actor)
     if not is_party then return end
+
     local target_count = action['Target Count'] or 1
     for t = 1, target_count do
         local tid = action['Target ' .. t .. ' ID']
@@ -363,22 +431,28 @@ windower.register_event('incoming chunk', function(id, data)
         end
     end
 end)
+
 -- Below this HP%, don't let automation volunteer the player for a
 -- brand new fight it doesn't have to be in (see the whiff-and-assist
 -- gate in Combat_Stall_Monitor below). Not a flee system -- just
 -- stops digging the hole deeper while already hurt.
 local COMBAT_SAFETY_HP_THRESHOLD = 25
+
 function Combat_Stall_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
         local current = player and windower.ffxi.get_mob_by_target('t')
+
         if player and player.status == 1 and current
             and current.valid_target and current.hpp and current.hpp > 0 then
+
             local now = os.clock()
+
             if last_party_damage_to_target and now - last_party_damage_to_target >= 20 then
                 windower.add_to_chat(207, '[Lazy] No damage landing on ' .. current.name .. ' for 20s -- switching targets.')
                 windower.send_command('input /attack off; input /target <me>')
                 temp_assist_mob_id = nil
+
             elseif player.vitals.hpp and player.vitals.hpp > COMBAT_SAFETY_HP_THRESHOLD then
                 -- No more waiting to prove we're not contributing --
                 -- if a party member's actively fighting something
@@ -395,6 +469,7 @@ function Combat_Stall_Monitor()
                         break
                     end
                 end
+
                 if helper_target_id then
                     local mob = windower.ffxi.get_mob_by_id(helper_target_id)
                     if mob and mob.valid_target and mob.hpp and mob.hpp > 0 then
@@ -404,6 +479,7 @@ function Combat_Stall_Monitor()
                     end
                 end
             end
+
         elseif temp_assist_mob_id then
             -- The mob we jumped over to help with is dead/gone --
             -- drop it and let normal targeting take back over.
@@ -414,13 +490,18 @@ function Combat_Stall_Monitor()
                 windower.send_command('input /attack off; input /target <me>')
             end
         end
+
         coroutine.sleep(5)
     end
 end
+
+ 
 -- ENGAGEMENT SYNC 
+
 function Engagement_Sync()
     while Start_Engine do
         local player = windower.ffxi.get_player()
+
         if player then
             --------------------------------------------------------
             -- Prune the aggro queue: drop anything that's died,
@@ -439,13 +520,16 @@ function Engagement_Sync()
                 end
             end
         end
+
         if player and player.status == 1 then
             local current = windower.ffxi.get_mob_by_target('t')
+
             local current_ok =
                 current
                 and current.valid_target
                 and current.hpp and current.hpp > 0
                 and current.distance and math.sqrt(current.distance) <= 5
+
             if not current_ok then
                 --------------------------------------------------------
                 -- Current target's dead/gone -- work through whoever
@@ -458,28 +542,33 @@ function Engagement_Sync()
                 -- above, so anything left here is fair game.)
                 --------------------------------------------------------
                 local switched = false
+
                 while #aggro_queue > 0 and not switched do
                     local candidate_id = table.remove(aggro_queue, 1)
                     local candidate = windower.ffxi.get_mob_by_id(candidate_id)
                     if candidate and candidate.valid_target
                         and candidate.hpp and candidate.hpp > 0
                         and (candidate.claim_id == 0 or candidate.claim_id == player.id) then
+
                         windower.add_to_chat(2, '[Lazy] Finishing that off, now dealing with: ' .. candidate.name)
                         windower.send_command('input /target "' .. candidate.name .. '"')
                         switched = true
                     end
                 end
+
                 if not switched and last_damage_source_id then
                     local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
                     if attacker and attacker.valid_target
                         and attacker.hpp and attacker.hpp > 0
                         and (attacker.claim_id == 0 or attacker.claim_id == player.id)
                         and (not current or attacker.id ~= current.id) then
+
                         windower.add_to_chat(2, '[Lazy] Engaged target mismatch -- retargeting to ' .. attacker.name)
                         windower.send_command('input /target "' .. attacker.name .. '"')
                         switched = true
                     end
                 end
+
                 if not switched then
                     -- Nothing specifically attacked us -- fall back to
                     -- whatever's closest that the party's already
@@ -495,9 +584,11 @@ function Engagement_Sync()
                 end
             end
         end
+
         coroutine.sleep(10)
     end
 end
+ 
 function Target_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
@@ -509,6 +600,7 @@ function Target_Monitor()
                 if origin_x and target.x then
                     in_range = Origin_Distance(target.x, target.y, target.z) <= origin_radius
                 end
+
                 if not name_ok or not in_range or target.claim_id ~= 0 then
                     windower.add_to_chat(2, 'Invalid target (' .. target.name .. ') - resetting')
                     windower.send_command('input /target <me>')
@@ -521,9 +613,11 @@ function Target_Monitor()
         coroutine.sleep(0.5)
     end
 end
+
 function Targeting()
     while Start_Engine do
         local player = windower.ffxi.get_player()
+
         if player and player.status ~= 1 then
             if settings.assist ~= '' then
                 windower.send_command('input /assist ' .. settings.assist)
@@ -542,16 +636,20 @@ function Targeting()
                 local target_id
                 local expected_name = (settings.target and settings.target ~= '') and settings.target or nil
                 local party_ids = Get_Party_Claim_Ids()
+
                 if expected_name then
                     target_id = Find_Named_Target(settings.target)
                 else
                     target_id = Choose_Target(party_ids)
                 end
+
                 if target_id > 0 then
                     pathing_to_origin = false
                     path_tick = 0
                     windower.ffxi.follow(target_id)
+
                     local mob = windower.ffxi.get_mob_by_index(target_id)
+
                     if Is_Legitimate_Target(mob, expected_name, party_ids) then
                         local distance = math.sqrt(mob.distance)
                         if distance < 1 then
@@ -573,3 +671,6 @@ function Targeting()
         coroutine.sleep(0.5)
     end
 end
+ 
+-- COMBAT
+-- (DNC rotation -- Try_DNC_Actions() -- now lives in DNCQueen.lua)
