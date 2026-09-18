@@ -286,6 +286,15 @@ windower.register_event('incoming chunk', function(id, data)
 
             if reaction == 0 then
                 local actor_id = action.Actor
+
+                -- A trust curing/buffing you, or any party member's
+                -- action landing on you, still comes through with
+                -- Reaction == 0 -- same as an actual hit. Nothing on
+                -- our own side counts as "attacking" us.
+                if Is_Party_Member(actor_id) then
+                    break
+                end
+
                 local actor = windower.ffxi.get_mob_by_id(actor_id)
 
                 last_damage_source = actor and actor.name or last_damage_source or 'something unseen'

@@ -23,17 +23,14 @@
 -- private to this file (constants, internal-only state) stays local.
 ------------------------------------------------------------
 
--- ORIGIN / PATHING STATE
-local origin_x = nil
-local origin_y = nil
-local origin_z = nil
-local origin_z_tolerance = 15 -- yalms of vertical separation still considered "in range"
-local pathing_to_origin = false
-local path_tick = 0
-local path_last_distance = nil
-local path_last_progress_time = nil
-local path_stuck_alerted = false
-local origin_unreachable_since = nil
+-- ORIGIN / PATHING STATE lives in Lazy.lua core (origin_x, origin_y,
+-- origin_z, origin_z_tolerance, pathing_to_origin, path_tick,
+-- path_last_distance, path_last_progress_time, path_stuck_alerted,
+-- origin_unreachable_since) -- declared there as globals since core's
+-- //lazy start reset block writes them directly. Do NOT re-declare
+-- any of them as `local` here -- that silently shadows the global
+-- within this file, disconnecting it from core's resets. (This was
+-- an actual bug here previously, since fixed.)
 
 -- ORIGIN DISTANCE 
 
