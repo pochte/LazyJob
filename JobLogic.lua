@@ -959,7 +959,10 @@ function Rest_Monitor()
                 end
             else
                 if not should_pause and mp < REST_MP_THRESHOLD then
-                    windower.send_command('input /heal')
+                    -- Clear any stale/next target before kneeling. Targeting()
+                    -- pauses while is_resting is true, so leader-mode autotarget
+                    -- cannot immediately reacquire a mob and cancel /heal.
+                    windower.send_command('input /target <me>; input /heal')
                     is_resting = true
                 end
             end

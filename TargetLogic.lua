@@ -616,6 +616,17 @@ function Targeting()
         local player = windower.ffxi.get_player()
 
         if player and player.status ~= 1 then
+            -- Rest owns the idle state. Do not acquire/follow a target while
+            -- kneeling; otherwise leader-mode autotarget immediately creates
+            -- a valid <t>, Rest_Monitor sees it as a pursuing target, and
+            -- cancels /heal on the next pass.
+            if is_resting then
+                windower.ffxi.follow(0)
+                windower.ffxi.run(false)
+                coroutine.sleep(0.5)
+                goto continue_targeting
+            end
+
             if settings.assist ~= '' then
                 windower.send_command('input /assist ' .. settings.assist)
                 local target = windower.ffxi.get_mob_by_target('t')
@@ -665,6 +676,7 @@ function Targeting()
                 end
             end
         end
+        ::continue_targeting::
         coroutine.sleep(0.5)
     end
 end
