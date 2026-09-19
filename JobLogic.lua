@@ -877,37 +877,6 @@ local function Being_Hit()
     return last_damage_taken_time and (os.clock() - last_damage_taken_time) <= REST_THREAT_WINDOW
 end
 
-local function Self_Buff_Due()
-    if not active_profile then return false end
-    local now = os.clock()
-
-    for _, buff in ipairs(active_profile.self_buffs or {}) do
-        local names = type(buff.name) == 'table' and buff.name or {buff.name}
-        local key = names[1]
-        local interval = (buff.interval or 20) * 60
-        local last = self_buff_last_cast[key]
-
-        local buff_ok = true
-        if buff.require_buff and not buffactive[buff.require_buff] then
-            buff_ok = false
-        end
-
-        if buff_ok and (not last or now - last >= interval) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function Skillchain_Burst_Pending()
-    if not active_profile or not active_profile.magic_burst then return false end
-    if not sc_active then return false end
-
-    local target = windower.ffxi.get_mob_by_target('t')
-    return target and sc_active(target.id) or false
-end
-
 function Rest_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
@@ -917,9 +886,12 @@ function Rest_Monitor()
 
         -- Being hit while idle and not already fighting the culprit:
         -- go kill it before it kills us, instead of just standing
-        -- there. This runs for every job -- it's not an MP/resting
-        -- thing, just "don't stand there getting hit."
-        if idle_and_alive then
+        -- there. Runs for every job, but NOT while actively resting --
+        -- once MP calls for a rest, nothing interrupts it until MP is
+        -- back up. (This was part of what caused rest to bounce for
+        -- a split second the moment anything nearby -- even a trust's
+        -- own fight -- registered as activity.)
+        if idle_and_alive and not is_resting then
             local threat = Being_Hit()
             if threat and last_damage_source_id then
                 local current = windower.ffxi.get_mob_by_target('t')
@@ -936,34 +908,27 @@ function Rest_Monitor()
 
         -- Actual resting (kneeling for MP) only applies to jobs that
         -- run on a meaningful MP pool -- see REST_ELIGIBLE_JOBS above.
+        -- Deliberately no interrupt conditions here anymore (no
+        -- threat/pursuing-target/self-buff-due/skillchain checks) --
+        -- under 500 MP, rest; at/above it, don't. Nothing else gets a
+        -- vote. Those checks were the actual cause of rest bouncing
+        -- for a split second on any nearby activity.
         if idle_and_alive and settings.rest_active and REST_ELIGIBLE_JOBS[current_job] then
             local mp = player.vitals.mp or 0
-            local threat = Being_Hit()
-
-            -- A legitimate current target means autotarget already
-            -- picked the next mob and is trying to walk us there --
-            -- kneeling blocks movement entirely, so resting can't be
-            -- allowed to fight that. This is separate from "threat"
-            -- (Being_Hit) -- it's not about whether something's
-            -- attacking us, just whether we're supposed to be moving.
-            local current_target = windower.ffxi.get_mob_by_target('t')
-            local pursuing_target = current_target and current_target.valid_target
-                and current_target.hpp and current_target.hpp > 0
-
-            local should_pause = threat or pursuing_target or Self_Buff_Due() or Skillchain_Burst_Pending()
 
             if is_resting then
-                if should_pause or mp >= REST_MP_THRESHOLD then
+                if mp >= REST_MP_THRESHOLD then
                     windower.send_command('input /heal off')
                     is_resting = false
                 end
             else
-                if not should_pause and mp < REST_MP_THRESHOLD then
+                if mp < REST_MP_THRESHOLD then
                     -- Clear any stale/next target before kneeling.
-                    -- Targeting() now pauses acquiring/following a new
-                    -- target while is_resting is true, so this just
-                    -- keeps <t> clean rather than leaving it pointed
-                    -- at whatever we were last considering.
+                    -- Targeting() and Follow_Monitor both pause
+                    -- acquiring/following a new target while
+                    -- is_resting is true, so this just keeps <t>
+                    -- clean rather than leaving it pointed at
+                    -- whatever we were last considering.
                     windower.send_command('input /target <me>; input /heal')
                     is_resting = true
                 end

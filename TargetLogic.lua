@@ -292,7 +292,7 @@ function Find_Nearest_Party_Claimed_Target(party_ids)
     return nil
 end
 
-function Is_Legitimate_Target(mob, expected_name, party_ids)
+function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
     if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
         return false
     end
@@ -321,6 +321,16 @@ function Is_Legitimate_Target(mob, expected_name, party_ids)
         return true
     end
 
+    -- Someone already started this fight manually and we're actively
+    -- engaged with it -- that alone is enough, whitelist or not.
+    -- Without this, Choose_Target re-validates the current target
+    -- against the autotarget whitelist every half-second, and a
+    -- manual pull onto anything not on that list gets constantly
+    -- dropped and re-picked instead of just... being fought.
+    if already_engaged and player and player.status == 1 then
+        return true
+    end
+
     return Is_Targetable_Monster(mob.name)
 end
 
@@ -329,7 +339,7 @@ function Choose_Target(party_ids)
     if not player then return -1 end
 
     local current = windower.ffxi.get_mob_by_target('t')
-    if Is_Legitimate_Target(current, nil, party_ids) then
+    if Is_Legitimate_Target(current, nil, party_ids, true) then
         return current.index
     end
 
@@ -342,20 +352,50 @@ end
 -- MONITORS 
 
 local FOLLOW_MELEE_RANGE = 3
+local FOLLOW_CAST_RANGE = 20 -- yalms; non-engaging jobs (auto_engage == false) stop and act from here instead of closing to melee range
+
+-- How close we need to be before Targeting()/Follow_Monitor treat the
+-- target as "in position" -- melee jobs close to near-adjacent,
+-- non-engaging casters (GEO etc.) stop at spell range and never walk
+-- into melee at all. Without this, a non-engaging job would either
+-- never set <t> (stuck waiting on a melee-tight distance check it'll
+-- never reach) or get walked right up next to the mob it's not
+-- supposed to be engaging.
+local function Engage_Distance(melee_default)
+    if active_profile and active_profile.engage_distance then
+        return active_profile.engage_distance
+    end
+    if active_profile and active_profile.auto_engage == false then
+        return FOLLOW_CAST_RANGE
+    end
+    return melee_default or 1
+end
 function Follow_Monitor()
     while Start_Engine do
-        local target = windower.ffxi.get_mob_by_target('t')
-
-        if not target then
-            windower.ffxi.follow(0)
-        elseif isCasting or isBusy > 0 then
+        if is_resting then
+            -- Same reasoning as Targeting(): follow() alone starts
+            -- movement and cancels /heal client-side. This coroutine
+            -- runs independently of Targeting() (every 0.2s vs 0.5s)
+            -- and was calling follow() off whatever <t> happened to
+            -- be with zero awareness of resting -- gating Targeting()
+            -- alone wasn't enough, this was still yanking us out of
+            -- the kneel on its own.
             windower.ffxi.follow(0)
         else
-            local distance = target.distance and math.sqrt(target.distance)
-            if distance and distance <= FOLLOW_MELEE_RANGE then
+            local target = windower.ffxi.get_mob_by_target('t')
+
+            if not target then
+                windower.ffxi.follow(0)
+            elseif isCasting or isBusy > 0 then
                 windower.ffxi.follow(0)
             else
-                windower.ffxi.follow(target.index)
+                local distance = target.distance and math.sqrt(target.distance)
+                local stop_range = Engage_Distance(FOLLOW_MELEE_RANGE)
+                if distance and distance <= stop_range then
+                    windower.ffxi.follow(0)
+                else
+                    windower.ffxi.follow(target.index)
+                end
             end
         end
 
@@ -658,7 +698,7 @@ function Targeting()
 
                     if Is_Legitimate_Target(mob, expected_name, party_ids) then
                         local distance = math.sqrt(mob.distance)
-                        if distance < 1 then
+                        if distance < Engage_Distance() then
                             windower.send_command('input /target "' .. mob.name .. '"')
                             if active_profile.auto_engage ~= false then
                                 windower.send_command('input /attack on')
@@ -680,4 +720,3 @@ end
  
 -- COMBAT
 -- (DNC rotation -- Try_DNC_Actions() -- now lives in DNCQueen.lua)
-
