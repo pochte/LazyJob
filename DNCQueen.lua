@@ -30,9 +30,11 @@
 --
 -- Gear-swapping for any of this is handled entirely by GearSwap on
 -- the personal job-file side, not here -- Lazy doesn't touch gear.
+
 dnc_flourish_pending = false
 dnc_opening_step = 1
 dnc_last_target_id = nil
+
 DNC_WALTZ_TIERS = {
     'Curing Waltz V',
     'Curing Waltz IV',
@@ -40,6 +42,7 @@ DNC_WALTZ_TIERS = {
     'Curing Waltz II',
     'Curing Waltz',
 }
+
 -- Status ailments Trance should react to. FFXI/Windower resources
 -- don't reliably expose an "is this a debuff" flag across versions,
 -- so this is an explicit list instead of trying to detect it
@@ -53,7 +56,9 @@ local DNC_TRACKED_DEBUFFS = {
     'Threnody', 'Dia', 'Dia II', 'Dia III', 'Bio', 'Bio II', 'Bio III',
     'Burn', 'Frazzle', 'Frazzle II', 'Malaise', 'Malaise II',
 }
+
 local debuff_since = nil -- os.clock() of when we first noticed a tracked debuff up
+
 -- Filler abilities used only when nothing higher-priority needs to
 -- happen -- tried in this order, first one off cooldown wins.
 local DNC_FILLER_ABILITIES = {
@@ -61,6 +66,7 @@ local DNC_FILLER_ABILITIES = {
     'Fan Dance',
     'No Foot Rise',
 }
+
 ------------------------------------------------------------
 -- PRE-WEAPONSKILL FLOURISH
 --
@@ -76,18 +82,22 @@ function Try_DNC_Pre_WS_Flourish()
     if buffactive['Climactic Flourish'] or buffactive['Violent Flourish'] then
         return false
     end
+
     if Can_Cast_Ability('Climactic Flourish') then
         windower.send_command('input /ja "Climactic Flourish" <me>')
         isBusy = Action_Delay
         return true
     end
+
     if Can_Cast_Ability('Violent Flourish') then
         windower.send_command('input /ja "Violent Flourish" <me>')
         isBusy = Action_Delay
         return true
     end
+
     return false
 end
+
 ------------------------------------------------------------
 -- DNC ROTATION
 ------------------------------------------------------------
@@ -96,6 +106,7 @@ function Try_DNC_Actions()
     if not player or not player.vitals then
         return false
     end
+
     --------------------------------------------------------
     -- NEW FIGHT DETECTION
     -- Reset the opener every time the current target changes to a
@@ -104,39 +115,47 @@ function Try_DNC_Actions()
     --------------------------------------------------------
     local target = windower.ffxi.get_mob_by_target('t')
     local target_id = target and target.id
+
     if target_id and target_id ~= dnc_last_target_id then
         Reset_DNC_Opening()
     end
     dnc_last_target_id = target_id
+
     --------------------------------------------------------
     -- HASTE SAMBA
     -- Always keep Haste Samba active.
     --------------------------------------------------------
     if not buffactive['Haste Samba']
         and Can_Cast_Ability('Haste Samba') then
+
         windower.send_command('input /ja "Haste Samba" <me>')
         isBusy = Action_Delay
         return true
     end
+
     --------------------------------------------------------
     -- EMERGENCY WALTZ
     --------------------------------------------------------
     if player.vitals.hpp and player.vitals.hpp <= 50 then
         for _, waltz in ipairs(DNC_WALTZ_TIERS) do
             local ability = res.job_abilities:with('name', waltz)
+
             if ability
                 and Can_Cast_Ability(waltz)
                 and player.vitals.mp >= (ability.mp_cost or 0) then
+
                 windower.add_to_chat(
                     167,
                     '[Lazy] Emergency Waltz -- ' ..
                     waltz .. ' (' .. player.vitals.hpp .. '% HP)'
                 )
+
                 Cast_Ability(waltz)
                 return true
             end
         end
     end
+
     --------------------------------------------------------
     -- TRANCE
     -- Trusts should clear our debuffs -- sometimes they don't.
@@ -150,19 +169,23 @@ function Try_DNC_Actions()
             break
         end
     end
+
     if currently_debuffed then
         if not debuff_since then debuff_since = os.clock() end
     else
         debuff_since = nil
     end
+
     if currently_debuffed and debuff_since
         and (os.clock() - debuff_since) >= 10
         and Can_Cast_Ability('Trance') then
+
         windower.add_to_chat(167, '[Lazy] Debuffed 10s+ -- using Trance.')
         Cast_Ability('Trance')
         debuff_since = nil
         return true
     end
+
     --------------------------------------------------------
     -- TARGET CHECK
     --------------------------------------------------------
@@ -171,7 +194,9 @@ function Try_DNC_Actions()
         or math.sqrt(target.distance) > 5 then
         return false
     end
+
     local stacks = buffactive['Finishing Move'] or 0
+
     --------------------------------------------------------
     -- OPENING SETUP
     --
@@ -185,22 +210,26 @@ function Try_DNC_Actions()
     -- changes to a new mob.
     --------------------------------------------------------
     if dnc_opening_step <= 4 then
+
         ----------------------------------------------------
         -- BOX STEP
         ----------------------------------------------------
         if dnc_opening_step == 1
             or dnc_opening_step == 3 then
+
             if Can_Cast_Ability('Box Step') then
                 windower.send_command('input /ja "Box Step" <t>')
                 isBusy = Action_Delay
                 dnc_opening_step = dnc_opening_step + 1
                 return true
             end
+
         ----------------------------------------------------
         -- PRESTO
         ----------------------------------------------------
         elseif dnc_opening_step == 2
             or dnc_opening_step == 4 then
+
             if Can_Cast_Ability('Presto') then
                 windower.send_command('input /ja "Presto" <t>')
                 isBusy = Action_Delay
@@ -208,8 +237,10 @@ function Try_DNC_Actions()
                 return true
             end
         end
+
         return false
     end
+
     --------------------------------------------------------
     -- CONTRADANCE
     -- Early-fight party Regain -- only while the mob's still at
@@ -220,6 +251,7 @@ function Try_DNC_Actions()
         isBusy = Action_Delay
         return true
     end
+
     --------------------------------------------------------
     -- GRAND PAS
     -- Finishing Moves are at 0 with TP already up for a WS --
@@ -228,22 +260,27 @@ function Try_DNC_Actions()
     --------------------------------------------------------
     local ws_starter = Get_WS_Starter()
     local ws_min_tp = ws_starter and ws_starter[2] or 1000
+
     if stacks == 0 and player.vitals.tp and player.vitals.tp >= ws_min_tp
         and Can_Cast_Ability('Grand Pas') then
+
         windower.send_command('input /ja "Grand Pas" <me>')
         isBusy = Action_Delay
         return true
     end
+
     --------------------------------------------------------
     -- REVERSE FLOURISH
     --------------------------------------------------------
     if (stacks >= 5 or dnc_flourish_pending)
         and Can_Cast_Ability('Reverse Flourish') then
+
         windower.send_command('input /ja "Reverse Flourish" <me>')
         isBusy = Action_Delay
         dnc_flourish_pending = false
         return true
     end
+
     --------------------------------------------------------
     -- BOX STEP
     --------------------------------------------------------
@@ -252,6 +289,7 @@ function Try_DNC_Actions()
         isBusy = Action_Delay
         return true
     end
+
     --------------------------------------------------------
     -- FILLER
     -- Nothing above had anything to do -- use whatever's off
@@ -264,8 +302,10 @@ function Try_DNC_Actions()
             return true
         end
     end
+
     return false
 end
+
 ------------------------------------------------------------
 -- RESET DNC OPENER
 ------------------------------------------------------------
