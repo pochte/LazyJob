@@ -21,7 +21,6 @@ JOB_PROFILES.WHM = {
        -- CURE BOT   
     cure_bot_active = true,
     cure_tiers = {
-        {max_missing = 250,spells = {'Cure II','Cure'}},
         {max_missing = 600,spells = {'Cure III','Cure II'}},
         {max_missing = 1100,spells = {'Cure IV','Cure III'}},
         {max_missing = 1700,spells = {'Cure V','Cure IV'}},

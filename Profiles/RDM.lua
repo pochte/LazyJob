@@ -54,7 +54,6 @@ JOB_PROFILES.RDM = {
     emergency_cure = true,
     emergency_cure_threshold = 25,
     cure_tiers = {
-        { max_missing = 250, spells = { 'Cure II', 'Cure' } },
         { max_missing = 600, spells = { 'Cure III', 'Cure II' } },
         { max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
     },

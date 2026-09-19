@@ -69,7 +69,6 @@ self_buffs = {
        -- CURE BOT
     cure_bot_active = false,
     cure_tiers = {
-        {min_missing = 100, max_missing = 350, spells = {'Cure II', 'Cure'}},
         {min_missing = 351, max_missing = 800, spells = {'Cure III', 'Cure II'}},
         {min_missing = 801, max_missing = 999999, spells = {'Cure IV', 'Cure III'}},
     },

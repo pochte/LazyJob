@@ -19,6 +19,17 @@ JOB_PROFILES.GEO = {
 
     debuffs = {
         {
+            -- Least MP cost, most reward: deploy the Luopan with
+            -- Geo-Poison specifically so Radial Arcana (which needs
+            -- a pet out) has something to use it on. Placed first so
+            -- it's tried before Geo-Frailty whenever there's no pet.
+            name = 'Geo-Poison',
+            target = '<bt>',
+            interval = 1,
+            require_no_pet = true,
+            use_ability_after = 'Radial Arcana',
+        },
+        {
             name = 'Geo-Frailty',
             target = '<bt>',
             interval = 3,
