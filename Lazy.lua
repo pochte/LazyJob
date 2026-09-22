@@ -423,6 +423,7 @@ windower.register_event('addon command', function(...)
         aggro_queue = {}
         last_party_damage_to_target = nil
         damage_watch_target_id = nil
+        last_self_hit_on_current_target = nil
         party_activity = {}
         temp_assist_mob_id = nil
         is_resting = false
