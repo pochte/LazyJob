@@ -210,18 +210,11 @@ function Find_Nearest_Target()
 end
  
 -- PARTY-AWARE TARGET PRIORITY
--- Target priority (leader/plain autotarget only -- named targets and
--- follower/assist mode don't go through this):
+-- Target priority:
 --   1. Current legitimate target.
---   2. Nearest unclaimed whitelist target -- leader mode picks its own
---      fights first.
---   3. Party member's target, as a fallback only, so leader mode still
---      does something useful if there's nothing left to pick on its
---      own, rather than standing idle.
--- (This order used to put the party's target ahead of picking our own
--- -- since trusts are almost always fighting something, that meant
--- leader mode spent nearly all its time just joining whatever the
--- party already had claimed, indistinguishable from follower mode.)
+--   2. Party member's target.
+--   3. Nearest unclaimed whitelist target.
+-- Used only for plain autotarget. Named targets always override. 
 
 function Get_Party_Claim_Ids()
     local ids = {}
@@ -350,13 +343,10 @@ function Choose_Target(party_ids)
         return current.index
     end
 
-    local nearest = Find_Nearest_Target()
-    if nearest > 0 then return nearest end
-
     local party_target = Find_Party_Target(party_ids)
     if party_target then return party_target end
 
-    return -1
+    return Find_Nearest_Target()
 end
  
 -- MONITORS 
@@ -422,21 +412,14 @@ end
 --     at all, the fight's stalled -- nothing's dying, drop it and let
 --     normal targeting pick something else.
 --   party_activity -- who in the party hit what, and when, regardless
---     of what our own target is. If a party member's fighting something
---     other than our own <t> AND we ourselves haven't landed a hit on
---     our own <t> recently (i.e. we're whiffing, not just "someone else
---     is also fighting"), jump over and help with that one mob, then
---     revert once it dies.
---   last_self_hit_on_current_target -- last time OUR OWN hit landed on
---     our current <t>. This is what actually gates the jump above --
---     without it, the jump fired any time a party member/trust hit
---     anything else, even mid-fight against a target that was still
---     alive and actively attacking us.
+--     of what our own target is. If a party member's actively fighting
+--     something other than our own <t>, jump over and help with that
+--     one mob right away (no waiting to first prove we're whiffing),
+--     then revert once it dies.
 last_party_damage_to_target = nil
 damage_watch_target_id      = nil
 party_activity              = {}  -- [actor_id] = {last_hit = os.clock(), target_id = mob id}
 temp_assist_mob_id          = nil -- non-nil while temporarily helping someone else's fight
-last_self_hit_on_current_target = nil
 
 function Is_Party_Member(actor_id)
     if not actor_id then return false end
@@ -465,10 +448,6 @@ windower.register_event('incoming chunk', function(id, data)
     if damage_watch_target_id ~= current_id then
         damage_watch_target_id      = current_id
         last_party_damage_to_target = current_id and os.clock() or nil
-        -- Same clean grace period for our own hits, so a freshly-
-        -- engaged target isn't instantly flagged as "we're whiffing"
-        -- before we've even swung once.
-        last_self_hit_on_current_target = current_id and os.clock() or nil
     end
 
     local is_self  = action.Actor == player.id
@@ -481,9 +460,6 @@ windower.register_event('incoming chunk', function(id, data)
         if tid and action['Target ' .. t .. ' Action 1 Reaction'] == 0 then
             if tid == current_id then
                 last_party_damage_to_target = os.clock()
-                if is_self then
-                    last_self_hit_on_current_target = os.clock()
-                end
             end
             if not is_self then
                 party_activity[action.Actor] = {last_hit = os.clock(), target_id = tid}
@@ -514,18 +490,15 @@ function Combat_Stall_Monitor()
                 windower.send_command('input /attack off; input /target <me>')
                 temp_assist_mob_id = nil
 
-            elseif player.vitals.hpp and player.vitals.hpp > COMBAT_SAFETY_HP_THRESHOLD
-                and (not last_self_hit_on_current_target or now - last_self_hit_on_current_target > 8) then
-                -- Only jump to help if WE'RE not actually landing hits
-                -- on our own current target (whiffing) -- a party
-                -- member fighting something else is not, by itself, a
-                -- reason to abandon a target that's alive and still
-                -- swinging on us. Jumping INTO a second, separate mob
-                -- while already hurt is how a melee dies for no reason
-                -- too, so this still won't volunteer for a new fight
-                -- below the safety threshold. Still allowed to bail on
-                -- a genuinely stalled fight above (that's risk-
-                -- reducing, not risk-adding).
+            elseif player.vitals.hpp and player.vitals.hpp > COMBAT_SAFETY_HP_THRESHOLD then
+                -- No more waiting to prove we're not contributing --
+                -- if a party member's actively fighting something
+                -- else, jump over right away. Jumping INTO a second,
+                -- separate mob while already hurt is how a melee dies
+                -- for no reason though, so this still won't volunteer
+                -- for a new fight below the safety threshold. Still
+                -- allowed to bail on a genuinely stalled fight above
+                -- (that's risk-reducing, not risk-adding).
                 local helper_target_id = nil
                 for actor_id, info in pairs(party_activity) do
                     if now - info.last_hit <= 5 and info.target_id ~= current.id then
@@ -696,18 +669,7 @@ function Targeting()
                 windower.send_command('input /assist ' .. settings.assist)
                 local target = windower.ffxi.get_mob_by_target('t')
                 if target and target.claim_id ~= 0 then
-                    -- Follow_Monitor (0.2s) already owns follow() for
-                    -- the current target, stopping it once in range.
-                    -- Calling follow() here too, unconditionally on
-                    -- every 0.5s tick, fought that stop and caused
-                    -- follow to visibly toggle on/off. Only chase here
-                    -- while still outside the range Follow_Monitor
-                    -- would stop at.
-                    local distance = target.distance and math.sqrt(target.distance)
-                    local stop_range = Engage_Distance(FOLLOW_MELEE_RANGE)
-                    if not distance or distance > stop_range then
-                        windower.ffxi.follow(target.index)
-                    end
+                    windower.ffxi.follow(target.index)
                     if active_profile.auto_engage ~= false then
                         windower.send_command('input /attack on')
                     end
@@ -730,23 +692,13 @@ function Targeting()
                 if target_id > 0 then
                     pathing_to_origin = false
                     path_tick = 0
+                    windower.ffxi.follow(target_id)
 
                     local mob = windower.ffxi.get_mob_by_index(target_id)
-                    local stop_range = Engage_Distance()
-                    local distance = mob and mob.distance and math.sqrt(mob.distance)
-
-                    -- Only chase via follow() while still outside
-                    -- engage range -- once inside, Follow_Monitor
-                    -- (which runs at 0.2s vs this loop's 0.5s) owns
-                    -- follow() exclusively. Re-issuing it here too on
-                    -- every tick fought Follow_Monitor's stop and made
-                    -- follow visibly toggle on and off.
-                    if not distance or distance >= stop_range then
-                        windower.ffxi.follow(target_id)
-                    end
 
                     if Is_Legitimate_Target(mob, expected_name, party_ids) then
-                        if distance and distance < stop_range then
+                        local distance = math.sqrt(mob.distance)
+                        if distance < Engage_Distance() then
                             windower.send_command('input /target "' .. mob.name .. '"')
                             if active_profile.auto_engage ~= false then
                                 windower.send_command('input /attack on')

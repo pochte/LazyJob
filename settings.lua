@@ -51,8 +51,7 @@ targeting = {
 	monsters = {
 		'Colibri',
 		'Bat',
-		'Apex Eft',
-		'Frigatebird'
+		'Apex Eft'
 	},
 	      
 	-- TARGETING RULES
@@ -81,6 +80,24 @@ needed_buffs = {}
 -- a previous version of this file, which is why Haste Samba
 -- stopped firing even with everything else configured correctly.
 haste_samba_active = true
+-- Job abilities granted by a specific SUBJOB.
+--
+-- These are completely independent of the main job profile.
+-- If the current subjob matches one of the entries below,
+-- those abilities are added to the self-ability rotation.
+--
+-- Therefore:
+--
+--     THF/DNC -> Haste Samba
+--     COR/DNC -> Haste Samba
+--     RDM/DNC -> Haste Samba
+--     WAR/DNC -> Haste Samba
+--     WHM/DNC -> Haste Samba
+--     etc.
+--
+-- Any job /DNC gets Haste Samba automatically.
+--
+-- Interval is measured in minutes.
 subjob_abilities = {
 	DNC = {
 		{
