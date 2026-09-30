@@ -1,81 +1,103 @@
 -- TARGETLOGIC
--- Target selection, pathing, following, and combat engagement.
--- Loaded by Lazy.lua via dofile.
---
--- Globals shared with Lazy.lua are intentionally not local.
--- ORIGIN / PATHING STATE
--- origin_x/y/z, origin_z_tolerance, pathing_to_origin, path_tick,
--- path_last_distance, path_last_progress_time, path_stuck_alerted,
--- and origin_unreachable_since are managed by Lazy.lua.
--- Do not redeclare them as local here.
--- FOLLOW STATE
--- Keep follow under one owner to prevent follow/cancel spam.
--- Never follow while engaged.
-local follow_active = false
-local follow_target_id = nil
-local function Stop_Follow()
-    if follow_active then
-        windower.ffxi.follow(0)
-        follow_active = false
-        follow_target_id = nil
-    end
-end
-local function Start_Follow(target_index, target_id)
-    if not target_index then return end
-    -- Already following this exact target. Do not re-issue follow().
-    if follow_active and follow_target_id == target_id then
-        return
-    end
-    -- If following something else, cancel it before changing targets.
-    if follow_active then
-        windower.ffxi.follow(0)
-    end
-    windower.ffxi.follow(target_index)
-    follow_active = true
-    follow_target_id = target_id
-end
--- ORIGIN DISTANCE
+-- Target selection, origin/pathing, follow, and combat target management.
+-- COMBAT RULE: once /attack on is sent and FFXI reports status == 1, combaowns the target. Don't reselect, don't resend /attack, don't watch
+-- target.hpp or stale mob-table data, and don't release the lock whileengaged. Player status is the only authority for ending combat.
+-- PRE-ENGAGE: a committed target can be followed before combat starts.
+
+-- ORIGIN / PATHING
 function Origin_Distance(x, y, z)
-    if not origin_x then return math.huge end
-    if origin_z and z and math.abs(z - origin_z) > origin_z_tolerance then
+    if not origin_x then
         return math.huge
     end
-    return math.sqrt((x - origin_x)^2 + (y - origin_y)^2)
+    if origin_z
+        and z
+        and math.abs(z - origin_z) > origin_z_tolerance
+    then
+        return math.huge
+    end
+    return math.sqrt(
+        (x - origin_x)^2 +
+        (y - origin_y)^2
+    )
 end
 function Set_Origin()
-    local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
-    if not player then return end
-    origin_x = player.x
-    origin_y = player.y
-    origin_z = player.z
+    local player =
+        windower.ffxi.get_player()
+    if not player then
+        return
+    end
+    local mob =
+        windower.ffxi.get_mob_by_id(
+            player.id
+        )
+    if not mob then
+        return
+    end
+    origin_x = mob.x
+    origin_y = mob.y
+    origin_z = mob.z
     path_last_distance = nil
     path_last_progress_time = nil
     path_stuck_alerted = false
     origin_unreachable_since = nil
-    windower.add_to_chat(2, 'Origin set: (' .. math.floor(origin_x) .. ', ' .. math.floor(origin_y) .. ') radius: ' .. origin_radius)
+    windower.add_to_chat(
+        2,
+        'Origin set: (' ..
+        math.floor(origin_x) ..
+        ', ' ..
+        math.floor(origin_y) ..
+        ') radius: ' ..
+        origin_radius
+    )
 end
 function Path_To_Origin()
-    if not origin_x then return end
-    local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
-    if not player then return end
-    local distance = Origin_Distance(player.x, player.y, player.z)
+    if not origin_x then
+        return
+    end
+    local player =
+        windower.ffxi.get_player()
+    if not player then
+        return
+    end
+    local mob =
+        windower.ffxi.get_mob_by_id(
+            player.id
+        )
+    if not mob then
+        return
+    end
+    local distance =
+        Origin_Distance(mob.x, mob.y,mob.z)
     if distance == math.huge then
-        Stop_Follow()
         windower.ffxi.run(false)
         local now = os.clock()
         if not origin_unreachable_since then
             origin_unreachable_since = now
         end
-        if (now - origin_unreachable_since) >= ORIGIN_UNREACHABLE_TIMEOUT then
-            windower.add_to_chat(2, '[Lazy] Origin unreachable for '
-                .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60)
-                .. ' min -- re-anchoring origin here and retargeting.')
+        if
+            (now - origin_unreachable_since)
+            >= ORIGIN_UNREACHABLE_TIMEOUT
+        then
+            windower.add_to_chat(
+                2,
+                '[Lazy] Origin unreachable for ' ..
+                math.floor(
+                    ORIGIN_UNREACHABLE_TIMEOUT / 60
+                ) ..
+                ' min -- re-anchoring origin and retargeting.'
+            )
             Set_Origin()
             return
         end
         if not path_stuck_alerted then
-            windower.add_to_chat(167, '[Lazy] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after '
-                .. math.floor(ORIGIN_UNREACHABLE_TIMEOUT / 60) .. ' min if still stuck.')
+            windower.add_to_chat(
+                167,
+                '[Lazy] Origin unreachable at current elevation -- stopping autopath. Will re-anchor here after ' ..
+                math.floor(
+                    ORIGIN_UNREACHABLE_TIMEOUT / 60
+                ) ..
+                ' min if still stuck.'
+            )
             path_stuck_alerted = true
         end
         pathing_to_origin = false
@@ -83,20 +105,29 @@ function Path_To_Origin()
         return
     end
     origin_unreachable_since = nil
-    -- Pathing to origin is manual movement, not follow movement.
-    -- Cancel Lazy's follow state once before taking over movement.
-    Stop_Follow()
+    windower.ffxi.follow(0)
     if distance > 3 then
         local now = os.clock()
-        if not path_last_distance or distance < path_last_distance - PATH_STUCK_EPSILON then
+        if not path_last_distance
+            or distance <
+                path_last_distance - PATH_STUCK_EPSILON
+        then
             path_last_distance = distance
             path_last_progress_time = now
             path_stuck_alerted = false
         elseif path_last_progress_time
-            and (now - path_last_progress_time) >= PATH_STUCK_TIMEOUT then
+            and
+            (now - path_last_progress_time)
+                >= PATH_STUCK_TIMEOUT
+        then
             windower.ffxi.run(false)
             if not path_stuck_alerted then
-                windower.add_to_chat(167, '[Lazy] Stuck pathing to origin (no progress in ' .. PATH_STUCK_TIMEOUT .. 's) -- stopping autopath.')
+                windower.add_to_chat(
+                    167,
+                    '[Lazy] Stuck pathing to origin (no progress in ' ..
+                    PATH_STUCK_TIMEOUT ..
+                    's) -- stopping autopath.'
+                )
                 path_stuck_alerted = true
             end
             pathing_to_origin = false
@@ -120,9 +151,126 @@ function Path_To_Origin()
         path_stuck_alerted = false
     end
 end
+-- UNATTACKABLE TRACKING
+unattackable_until = {}
+function Is_Unattackable(id)
+    local until_time =
+        id
+        and unattackable_until[id]
+    if not until_time then
+        return false
+    end
+    if os.clock() >= until_time then
+        unattackable_until[id] = nil
+        return false
+    end
+    return true
+end
+windower.register_event('incoming text', function(original)
+    if not Start_Engine or not original then return end
+    if string.find(original, '[Lazy DEBUG]', 1, true) then return end
+    if string.find(original, 'You cannot attack that target', 1, true) then
+        local target = windower.ffxi.get_mob_by_target('t')
+        if Debug.enabled then
+            local player = windower.ffxi.get_player()
+            Debug.Log('!!! FFXI REJECTED ATTACK !!!')
+            Debug.Log('Message: ' .. tostring(original))
+            Debug.Target('TARGET WHEN ATTACK WAS REJECTED', target)
+            Debug.State('STATE WHEN ATTACK WAS REJECTED')
+            Debug.Log(string.format(
+                'REJECTION STATE | player_status=%s managed=%s locked=%s engage_sent=%s combat_started=%s',
+                tostring(player and player.status), tostring(managed_target_id),
+                tostring(combat_locked_target_id), tostring(engage_sent_target_id),
+                tostring(combat_started)))
+        end
+        -- If combat never actually started, the engage attempt failed and
+        -- the target may be retried. Once combat has started, NEVER release
+        -- the combat lock because of this message.
+        if target and target.id then
+            if target.id == combat_locked_target_id and not combat_started then
+                Debug.Target('ATTACK REJECTED BEFORE COMBAT - CLEARING LOCK', target)
+                unattackable_until[target.id] = os.clock() + 20
+                Clear_Combat_Target()
+            elseif target.id ~= combat_locked_target_id then
+                unattackable_until[target.id] = os.clock() + 20
+            end
+        end
+    end
+end)
+-- RANGED PULL
+pull_attempts = {}
+function Try_Ranged_Pull(mob, distance)
+    local rp =
+        active_profile
+        and active_profile.ranged_pull
+    if not rp
+        or not mob
+        or mob.claim_id ~= 0
+    then
+        return false
+    end
+    if not distance
+        or distance > (rp.range or 20)
+    then
+        return false
+    end
+    windower.ffxi.follow(0)
+    local current =
+        windower.ffxi.get_mob_by_target('t')
+    if not current
+        or current.id ~= mob.id
+    then
+        Debug.Target(
+            'RANGED PULL SELECT',
+            mob
+        )
+        Select_Target(mob)
+        return true
+    end
+    if isBusy > 0
+        or isCasting
+        or (
+            Is_Moving
+            and Is_Moving()
+        )
+    then
+        return true
+    end
+    local now = os.clock()
+    local info =
+        pull_attempts[mob.id]
+        or {
+            count = 0,
+            last = 0
+        }
+    local retry =
+        rp.retry or 6
+    if now - info.last < retry then
+        return true
+    end
+    if info.count >= (rp.max_tries or 3) then
+        unattackable_until[mob.id] =
+            now + 20
+        pull_attempts[mob.id] = nil
+        return true
+    end
+    Debug.Target(
+        'RANGED PULL',
+        mob
+    )
+    windower.send_command(
+        'input /ra <t>'
+    )
+    info.count = info.count + 1
+    info.last = now
+    pull_attempts[mob.id] = info
+    isBusy = Action_Delay
+    return true
+end
 -- TARGETING HELPERS
 function Find_Named_Target(target_name)
-    local mob_array = windower.ffxi.get_mob_array()
+    local mob_array =
+        windower.ffxi.get_mob_array()
     local candidates = {}
     for key, mob in pairs(mob_array) do
         if mob.distance then
@@ -133,18 +281,29 @@ function Find_Named_Target(target_name)
             }
         end
     end
-    table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    table.sort(
+        candidates,
+        function(a, b)
+            return a.dist < b.dist
+        end
+    )
     for _, entry in ipairs(candidates) do
         local mob = entry.mob
         local in_range = true
-        if origin_x and mob.x then
-            in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
+        if origin_x
+            and mob.x
+        then
+            in_range = Origin_Distance(mob.x,mob.y,mob.z) <= origin_radius
         end
-        if string.lower(mob.name or '') == string.lower(target_name or '')
+        if
+            string.lower(mob.name or '') ==
+                string.lower(target_name or '')
             and mob.valid_target
-            and mob.hpp and mob.hpp > 0
+            and mob.hpp
+            and mob.hpp > 0
             and in_range
             and mob.claim_id == 0
+            and not Is_Unattackable(mob.id)
         then
             return entry.key
         end
@@ -152,16 +311,24 @@ function Find_Named_Target(target_name)
     return -1
 end
 function Is_Targetable_Monster(name)
-    if not name then return false end
-    for _, monster in ipairs(targeting.monsters or {}) do
-        if string.lower(name) == string.lower(monster) then
+    if not name then
+        return false
+    end
+    for _, monster in ipairs(
+        targeting.monsters or {}
+    ) do
+        if
+            string.lower(name) ==
+                string.lower(monster)
+        then
             return true
         end
     end
     return false
 end
 function Find_Nearest_Target()
-    local mob_array = windower.ffxi.get_mob_array()
+    local mob_array =
+        windower.ffxi.get_mob_array()
     local candidates = {}
     for key, mob in pairs(mob_array) do
         if mob.distance then
@@ -172,39 +339,73 @@ function Find_Nearest_Target()
             }
         end
     end
-    table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    table.sort(
+        candidates,
+        function(a, b)
+            return a.dist < b.dist
+        end
+    )
     for _, entry in ipairs(candidates) do
         local mob = entry.mob
         local valid =
             Is_Targetable_Monster(mob.name)
             and mob.valid_target
-            and (not targeting.only_alive or (mob.hpp and mob.hpp > 0))
-            and (not targeting.within_origin or not origin_x or not mob.x
-                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
-            and (not targeting.only_unclaimed or mob.claim_id == 0)
-        if valid then return entry.key end
+            and (
+                not targeting.only_alive
+                or (
+                    mob.hpp
+                    and mob.hpp > 0
+                )
+            )
+            and (
+                not targeting.within_origin
+                or not origin_x
+                or not mob.x
+ in_range = Origin_Distance(mob.x,mob.y,mob.z) <= origin_radius)
+            and (not targeting.only_unclaimed
+                    or mob.claim_id == 0)
+            and not Is_Unattackable(mob.id)
+        if valid then
+            return entry.key
+        end
     end
     return -1
 end
--- PARTY-AWARE TARGET PRIORITY
--- Target priority:
---   1. Current legitimate target.
---   2. Party member's target.
---   3. Nearest unclaimed whitelist target.
--- Used only for plain autotarget. Named targets always override.
+-- PARTY / TRUST HELPERS
+function Is_Party_Member(actor_id)
+    if not actor_id then
+        return false
+    end
+    local party =
+        windower.ffxi.get_party()
+    if    local party = windower.ffxi.get_party()
+    if not party then return false end
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        local id = m and ((m.mob and m.mob.id) or m.id)
+        if id == actor_id then return true end
+    end
+    return false
+end
+function Is_Solo_Leader()
+    if not settings or settings.assist ~= '' then return false end
+    local party = windower.ffxi.get_party()
+    if not party then return true end
+    for _, key in ipairs({'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        if m and (not m.mob or not m.mob.is_npc) then return false end
+    end
+    return true
+end
 function Get_Party_Claim_Ids()
     local ids = {}
     local party = windower.ffxi.get_party()
     if not party then return ids end
     local player = windower.ffxi.get_player()
-    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
         local m = party[key]
-        if m then
-            local id = (m.mob and m.mob.id) or m.id
-            if id and (not player or id ~= player.id) then
-                ids[id] = true
-            end
-        end
+        local id = m and ((m.mob and m.mob.id) or m.id)
+        if id and (not player or id ~= player.id) then ids[id] = true end
     end
     return ids
 end
@@ -213,379 +414,943 @@ function Find_Party_Target(party_ids)
     local mob_array = windower.ffxi.get_mob_array()
     if not mob_array then return nil end
     for index, mob in pairs(mob_array) do
-        if mob.valid_target and mob.hpp and mob.hpp > 0
-            and mob.claim_id and party_ids[mob.claim_id] then
-            local in_range = true
-            if origin_x and mob.x then
-                in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
-            end
-            if in_range then return index end
+        if mob.valid_target
+            and mob.hpp and mob.hpp > 0
+            and not Is_Unattackable(mob.id)
+            and mob.claim_id and party_ids[mob.claim_id]
+            and (not (origin_x and mob.x)
+                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
+        then
+            return index
+        end
+    end
+    return nil
+end not party then
+        return false
+    end
+    for _, key in ipairs({
+        'p0',
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+        'p5'
+    }) do
+        local m = party[key]
+        local id =
+            m
+            and (
+                (m.mob and m.mob.id)
+                or m.id
+            )
+        if id == actor_id then
+            return true
+        end
+    end
+    return false
+end
+function Is_Solo_Leader()
+    if not settings
+        or settings.assist ~= ''
+    then
+        return false
+    end
+       local party = windower.ffxi.get_party()
+    if not party then return false end
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        local id = m and ((m.mob and m.mob.id) or m.id)
+        if id == actor_id then return true end
+    end
+    return false
+end
+function Is_Solo_Leader()
+    if not settings or settings.assist ~= '' then return false end
+    local party = windower.ffxi.get_party()
+    if not party then return true end
+    for _, key in ipairs({'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        if m and (not m.mob or not m.mob.is_npc) then return false end
+    end
+    return true
+end
+function Get_Party_Claim_Ids()
+    local ids = {}
+    local party = windower.ffxi.get_party()
+    if not party then return ids end
+    local player = windower.ffxi.get_player()
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        local id = m and ((m.mob and m.mob.id) or m.id)
+        if id and (not player or id ~= player.id) then ids[id] = true end
+    end
+    return ids
+end
+function Find_Party_Target(party_ids)
+    if not party_ids or next(party_ids) == nil then return nil end
+    local mob_array = windower.ffxi.get_mob_array()
+    if not mob_array then return nil end
+    for index, mob in pairs(mob_array) do
+        if mob.valid_target
+            and mob.hpp and mob.hpp > 0
+            and not Is_Unattackable(mob.id)
+            and mob.claim_id and party_ids[mob.claim_id]
+            and (not (origin_x and mob.x)
+                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
+        then
+            return index
         end
     end
     return nil
 end
--- Same idea as Find_Party_Target, but nearest-first rather than
--- first-found -- used specifically for "my target just died, what's
--- the closest thing the party's already fighting" (Engagement_Sync),
--- where distance actually matters. Returns the mob itself (not just
--- its index) since the caller needs its name to /target by.
 function Find_Nearest_Party_Claimed_Target(party_ids)
     if not party_ids or next(party_ids) == nil then return nil end
     local mob_array = windower.ffxi.get_mob_array()
     if not mob_array then return nil end
     local candidates = {}
-    for index, mob in pairs(mob_array) do
-        if mob.valid_target and mob.hpp and mob.hpp > 0
+    for _, mob in pairs(mob_array) do
+        if mob.valid_target
+            and mob.hpp and mob.hpp > 0
+            and not Is_Unattackable(mob.id)
             and mob.claim_id and party_ids[mob.claim_id]
-            and mob.distance then
-            local in_range = true
-            if origin_x and mob.x then
-                in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
-            end
-            if in_range then
-                candidates[#candidates + 1] = { mob = mob, dist = math.sqrt(mob.distance) }
-            end
+            and mob.distance
+            and (not (origin_x and mob.x)
+                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
+        then
+            candidates[#candidates + 1] = {mob = mob, dist = math.sqrt(mob.distance)}
         end
     end
-    table.sort(candidates, function(a, b) return a.dist < b.dist end)
-    if candidates[1] then return candidates[1].mob end
-    return nil
+       table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    return candidates[1] and candidates[1].mob
 end
+-- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
-    if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
+    if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then return false end
+    if origin_x and mob.x and Origin_Distance(mob.x, mob.y, mob.z) > origin_radius then
         return false
     end
-    local in_range = true
-    if origin_x and mob.x then
-        in_range = Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
-    end
-    if not in_range then return false end
     local player = windower.ffxi.get_player()
-    local claimed_by_us_or_party =
-        mob.claim_id == 0
+    if (player and mob.id == player.id)
+        or Is_Party_Member(mob.id)
+        or Is_Unattackable(mob.id)
+    then
+        return false
+    end
+    local ours = mob.claim_id == 0
         or (player and mob.claim_id == player.id)
         or (party_ids and party_ids[mob.claim_id])
     if expected_name then
-        return string.lower(mob.name or '') == string.lower(expected_name)
-            and claimed_by_us_or_party
+        return string.lower(mob.name or '') == string.lower(expected_name) and ours
     end
-    if claimed_by_us_or_party then
-        return true
-    end
-    if already_engaged and player and player.status == 1 then
-        return true
-    end
+    if ours then return true end
+    if already_engaged and player and player.status == 1 then return true end
     return Is_Targetable_Monster(mob.name)
 end
 function Choose_Target(party_ids)
-    local player = windower.ffxi.get_player()
-    if not player then return -1 end
+    if not windower.ffxi.get_player() then return -1 end
     local current = windower.ffxi.get_mob_by_target('t')
-    if Is_Legitimate_Target(current, nil, party_ids, true) then
-        return current.index
-    end
-    local party_target = Find_Party_Target(party_ids)
-    if party_target then return party_target end
-    return Find_Nearest_Target()
+    if Is_Legitimate_Target(current, nil, party_ids, true) then return current.index end
+    local nearest = Find_Nearest_Target()
+    if nearest > 0 then return nearest end
+    if Is_Solo_Leader() then return -1 end
+    return Find_Party_Target(party_ids) or -1
 end
--- MONITORS
-local FOLLOW_MELEE_RANGE = 3
+-- TARGET STATE
+managed_target_id =
+    managed_target_id or nil
+pending_target_id =
+    pending_target_id or nil
+pending_target_time =
+    pending_target_time or 0
+local TARGET_SELECT_TIMEOUT = 3
+combat_locked_target_id =
+    combat_locked_target_id or nil
+engage_sent_target_id =
+    engage_sent_target_id or nil
+combat_lock_time =
+    combat_lock_time or nil
+-- True only after FFXI has actually reported status == 1
+-- for the currently committed combat target.
+combat_started =
+    combat_started or false
+-- CLEAR COMBAT STATE
+function Clear_Combat_Target()
+    Debug.State(
+        'CLEARING COMBAT STATE'
+    )
+    combat_locked_target_id = nil
+    managed_target_id = nil
+    pending_target_id = nil
+    pending_target_time = 0
+    engage_sent_target_id = nil
+    combat_lock_time = nil
+    combat_started = false
+end
+-- EXACT TARGET SELECTION
+function Select_Target(mob)
+    if not mob
+        or not mob.id
+        or not mob.index
+    then
+        return false
+    end
+    if combat_locked_target_id then
+        if combat_locked_target_id == mob.id then
+            return true
+        end
+        Debug.Target(
+            'BLOCKED SELECT - COMBAT LOCK',
+            mob
+        )
+        return false
+    end
+    local player =
+        windower.ffxi.get_player()
+    if not player then
+        return false
+    end
+    Debug.Target(
+        'SELECT',
+        mob
+    )
+    Debug.State(
+        'BEFORE SELECT'
+    )
+    pending_target_id = mob.id
+    pending_target_time = os.clock()
+    packets.inject(
+        packets.new(
+            'incoming',
+            0x058,
+            {
+                ['Player'] = player.id,
+                ['Target'] = mob.id,
+                ['Player Index'] = player.index,
+            }
+        )
+    )
+    return true
+end
+function Confirm_Target()
+    if not pending_target_id then
+        return nil
+    end
+    local target =
+        windower.ffxi.get_mob_by_target('t')
+    if target
+        and target.id == pending_target_id
+    then
+        Debug.Target(
+            'CONFIRM TARGET',
+            target
+        )
+        Debug.State(
+            'AFTER TARGET CONFIRM'
+        )
+        pending_target_id = nil
+        pending_target_time = 0
+        return target
+    end
+    if
+        os.clock() - pending_target_time
+            >= TARGET_SELECT_TIMEOUT
+    then
+        Debug.State(
+            'TARGET CONFIRM TIMEOUT'
+        )
+        pending_target_id = nil
+        pending_target_time = 0
+    end
+    return nil
+end
+-- NORMAL FFXI ENGAGE
+function Engage_Target(mob)
+    if Debug.enabled then
+        local current =
+            windower.ffxi.get_mob_by_target('t')
+        local player =
+            windower.ffxi.get_player()
+        Debug.Log(
+            string.format(
+                '>>> Engage_Target CALLED <<< requested=%s id=%s <t>=%s status=%s managed=%s locked=%s engage_sent=%s combat_started=%s',
+                tostring(
+                    mob and mob.name
+                ),
+                tostring(
+                    mob and mob.id
+                ),
+                tostring(
+                    current and current.id
+                ),
+                tostring(
+                    player and player.status
+                ),
+                tostring(managed_target_id),
+                tostring(combat_locked_target_id),
+                tostring(engage_sent_target_id),
+                tostring(combat_started)
+            )
+        )
+    end
+    -- INVALID
+    if not mob
+        or not mob.id
+    then
+        Debug.Log(
+            'ENGAGE FAILED - INVALID TARGET'
+        )
+        return false
+    end
+    -- COMBAT ALREADY LOCKED
+    if combat_locked_target_id then
+        if combat_locked_target_id == mob.id then
+            Debug.State(
+                'ENGAGE IGNORED - ALREADY LOCKED'
+            )
+            return true
+        end
+        Debug.Target(
+            'ENGAGE BLOCKED - DIFFERENT COMBAT LOCK',
+            mob
+        )
+        return false
+    end
+    local player =
+        windower.ffxi.get_player()
+    if not player then
+        return false
+    end
+    -- PLAYER ALREADY ENGAGED
+    if player.status == 1 then
+        Debug.State(
+            'ENGAGE BLOCKED - PLAYER ALREADY ENGAGED'
+        )
+        return false
+    end
+    -- EXACT <t> CHECK
+    local target =
+        windower.ffxi.get_mob_by_target('t')
+    if not target
+        or target.id ~= mob.id
+    then
+        Debug.Log(
+            string.format(
+                'TARGET MISMATCH requested=%s actual=%s -- RESELECTING',
+                tostring(mob.id),
+                tostring(
+                    target and target.id
+                )
+            )
+        )
+        Select_Target(mob)
+        return false
+    end
+    -- AUTO ENGAGE DISABLED
+    if active_profile
+        and active_profile.auto_engage == false
+    then
+        pending_target_id = nil
+        pending_target_time = 0
+        windower.ffxi.follow(0)
+        Debug.State(
+            'AUTO ENGAGE DISABLED'
+        )
+        return true
+    end
+    -- UNATTACKABLE
+    if Is_Unattackable(mob.id) then
+        Debug.Target(
+            'BLOCKED - MARKED UNATTACKABLE',
+            mob
+        )
+        return false
+    end
+    -- COMMIT COMBAT
+    combat_locked_target_id = mob.id
+    managed_target_id = mob.id
+    engage_sent_target_id = mob.id
+    combat_lock_time = os.clock()
+    combat_started = false
+    pending_target_id = nil
+    pending_target_time = 0
+    windower.ffxi.follow(0)
+    -- FINAL TARGET SNAPSHOT
+    local final_target =
+        windower.ffxi.get_mob_by_target('t')
+    Debug.Target(
+        'FINAL MANAGED MOB',
+        mob
+    )
+    Debug.Target(
+        'FINAL <t> BEFORE ATTACK',
+        final_target
+    )
+    -- SEND /ATTACK ON EXACTLY ONCE
+    Debug.Log(
+        string.format(
+            '>>> SENDING /attack on <<< name=%s id=%s index=%s hpp=%s claim=%s dist=%s status=%s managed=%s locked=%s engage_sent=%s <t>=%s',
+            tostring(mob.name),
+            tostring(mob.id),
+            tostring(mob.index),
+            tostring(mob.hpp),
+            tostring(mob.claim_id),
+            mob.distance
+                and string.format(
+                    '%.2f',
+                    math.sqrt(mob.distance)
+                )
+                or 'nil',
+            tostring(player.status),
+            tostring(managed_target_id),
+            tostring(combat_locked_target_id),
+            tostring(engage_sent_target_id),
+            tostring(
+                final_target
+                and final_target.id
+            )
+        )
+    )
+    windower.send_command(
+        'input /attack on'
+    )
+    -- LOCK CAMERA ONCE
+    if not lockon_done then
+        windower.send_command(
+            'input /lockon'
+        )
+        lockon_done = true
+    end
+    return true
+end
+-- RANGE
+local MELEE_ENGAGE_RANGE = 3
 local FOLLOW_CAST_RANGE = 20
-local function Engage_Distance(melee_default)
-    if active_profile and active_profile.engage_distance then
+function Stop_Range(mob)
+    local rp =
+        active_profile
+        and active_profile.ranged_pull
+    if rp
+        and mob
+        and mob.claim_id == 0
+    then
+        return rp.range or 20
+    end
+    if rp
+        and mob
+        and mob.claim_id ~= 0
+    then
+        return
+            rp.engage_distance
+            or MELEE_ENGAGE_RANGE
+    end
+    if active_profile
+        and active_profile.engage_distance
+    then
         return active_profile.engage_distance
     end
-    if active_profile and active_profile.auto_engage == false then
+    if active_profile
+        and active_profile.auto_engage == false
+    then
         return FOLLOW_CAST_RANGE
     end
-    return melee_default or 1
+    return MELEE_ENGAGE_RANGE
 end
+local FOLLOW_MELEE_RANGE = 3
 function Follow_Monitor()
     while Start_Engine do
-        local player = windower.ffxi.get_player()
-        -- CRITICAL:
-        -- Once FFXI reports us as engaged, follow is completely disabled.
-        -- This prevents this 0.2s coroutine from undoing the combat stop
-        -- issued by Targeting()/Target_Monitor().
-        if player and player.status == 1 then
-            Stop_Follow()
+        if combat_locked_target_id then
+            local target = windower.ffxi.get_mob_by_id(combat_locked_target_id)
+            if target and target.valid_target then
+                local distance = target.distance and math.sqrt(target.distance)
+                if distance and distance > FOLLOW_MELEE_RANGE then
+                    windower.ffxi.follow(target.index)
+                else
+                    windower.ffxi.follow(0)
+                end
+            else
+                windower.ffxi.follow(0)
+            end
         elseif is_resting then
-            Stop_Follow()
+            windower.ffxi.follow(0)
+        elseif isCasting or isBusy > 0 then
+            windower.ffxi.follow(0)
         else
             local target = windower.ffxi.get_mob_by_target('t')
             if not target then
-                Stop_Follow()
-            elseif isCasting or isBusy > 0 then
-                Stop_Follow()
+                windower.ffxi.follow(0)
+            elseif managed_target_id and target.id ~= managed_target_id then
+                Debug.Target('FOLLOW MONITOR DIFFERENT <t>', target)
+                local mob = windower.ffxi.get_mob_by_id(managed_target_id)
+                if mob and mob.valid_target then
+                    Select_Target(mob)
+                    windower.ffxi.follow(0)
+                else
+                    windower.ffxi.follow(0)
+                end
             else
                 local distance = target.distance and math.sqrt(target.distance)
-                local stop_range = Engage_Distance(FOLLOW_MELEE_RANGE)
-                if not distance or distance <= stop_range then
-                    Stop_Follow()
+                local stop_range = Stop_Range(target)
+                if distance and distance <= stop_range then
+                    windower.ffxi.follow(0)
                 else
-                    Start_Follow(target.index, target.id)
+                    windower.ffxi.follow(target.index)
                 end
             end
         end
         coroutine.sleep(0.2)
     end
 end
--- COMBAT STALL / ASSIST WATCH
+-- COMBAT DAMAGE WATCH
 last_party_damage_to_target = nil
-damage_watch_target_id      = nil
-party_activity              = {}
-temp_assist_mob_id          = nil
-function Is_Party_Member(actor_id)
-    if not actor_id then return false end
-    local party = windower.ffxi.get_party()
-    if not party then return false end
-    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
-        local m = party[key]
-        local mid = m and ((m.mob and m.mob.id) or m.id)
-        if mid == actor_id then return true end
-    end
-    return false
-end
-windower.register_event('incoming chunk', function(id, data)
-    if id ~= 0x028 then return end
-    local action = packets.parse('incoming', data)
-    local player = windower.ffxi.get_player()
-    if not player then return end
-    local current    = windower.ffxi.get_mob_by_target('t')
-    local current_id = current and current.id
-    if damage_watch_target_id ~= current_id then
-        damage_watch_target_id      = current_id
-        last_party_damage_to_target = current_id and os.clock() or nil
-    end
-    local is_self  = action.Actor == player.id
-    local is_party = is_self or Is_Party_Member(action.Actor)
-    if not is_party then return end
-    local target_count = action['Target Count'] or 1
-    for t = 1, target_count do
-        local tid = action['Target ' .. t .. ' ID']
-        if tid and action['Target ' .. t .. ' Action 1 Reaction'] == 0 then
-            if tid == current_id then
-                last_party_damage_to_target = os.clock()
+damage_watch_target_id = nil
+party_activity = {}
+last_self_hit_on_current_target = nil
+windower.register_event(
+    'incoming chunk',
+    function(id, data)
+        if id ~= 0x028 then
+            return
+        end
+        local action =
+            packets.parse(
+                'incoming',
+                data
+            )
+        local player =
+            windower.ffxi.get_player()
+        if not player then
+            return
+        end
+        local current =
+            windower.ffxi.get_mob_by_target('t')
+        local current_id =
+            current and current.id
+        if damage_watch_target_id ~= current_id then
+            damage_watch_target_id = current_id
+            last_party_damage_to_target =
+                current_id
+                and os.clock()
+                or nil
+            last_self_hit_on_current_target =
+                current_id
+                and os.clock()
+                or nil
+        end
+        local is_self =
+            action.Actor == player.id
+        local is_party =
+            is_self
+            or Is_Party_Member(
+                action.Actor
+            )
+        if not is_party then
+            return
+        end
+        local target_count =
+            action['Target Count']
+            or 1
+        for t = 1, target_count do
+            local tid =
+                action[
+                    'Target ' ..
+                    t ..
+                    ' ID'
+                ]
+            if
+                tid
+                and action[
+                    'Target ' ..
+                    t ..
+                    ' Action 1 Reaction'
+                ] == 0
+            then
+                if tid == current_id then
+                    last_party_damage_to_target =
+                        os.clock()
+                    if is_self then
+                        last_self_hit_on_current_target =
+                            os.clock()
+                    end
+                end
+                if not is_self then
+                    party_activity[
+                        action.Actor
+                    ] = {
+                        last_hit = os.clock(),
+                        target_id = tid,
+                    }
+                end
+                break
             end
-            if not is_self then
-                party_activity[action.Actor] = {
-                    last_hit = os.clock(),
-                    target_id = tid
-                }
-            end
-            break
         end
     end
-end)
-local COMBAT_SAFETY_HP_THRESHOLD = 25
+)
+-- COMBAT STALL MONITOR
 function Combat_Stall_Monitor()
     while Start_Engine do
-        local player = windower.ffxi.get_player()
-        local current = player and windower.ffxi.get_mob_by_target('t')
-        if player and player.status == 1 and current
-            and current.valid_target and current.hpp and current.hpp > 0 then
-            -- We are already fighting. Never allow any follow state
-            -- to remain active while the stall/assist monitor works.
-            Stop_Follow()
-            local now = os.clock()
-            if last_party_damage_to_target and now - last_party_damage_to_target >= 20 then
-                windower.add_to_chat(207, '[Lazy] No damage landing on ' .. current.name .. ' for 20s -- switching targets.')
-                windower.send_command('input /attack off; input /target <me>')
-                temp_assist_mob_id = nil
-            elseif player.vitals.hpp and player.vitals.hpp > COMBAT_SAFETY_HP_THRESHOLD then
-                local helper_target_id = nil
-                for actor_id, info in pairs(party_activity) do
-                    if now - info.last_hit <= 5 and info.target_id ~= current.id then
-                        helper_target_id = info.target_id
-                        break
-                    end
-                end
-                if helper_target_id then
-                    local mob = windower.ffxi.get_mob_by_id(helper_target_id)
-                    if mob and mob.valid_target and mob.hpp and mob.hpp > 0 then
-                        windower.add_to_chat(207, '[Lazy] Not landing hits on ' .. current.name .. ' -- helping with ' .. mob.name .. ' instead.')
-                        windower.send_command('input /target "' .. mob.name .. '"; wait 0.2; input /attack on')
-                        temp_assist_mob_id = mob.id
-                    end
-                end
-            end
-        elseif temp_assist_mob_id then
-            local mob = windower.ffxi.get_mob_by_id(temp_assist_mob_id)
-            if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then
-                windower.add_to_chat(207, '[Lazy] Done helping -- back to normal targeting.')
-                temp_assist_mob_id = nil
-                Stop_Follow()
-                windower.send_command('input /attack off; input /target <me>')
-            end
-        end
         coroutine.sleep(5)
     end
 end
 -- ENGAGEMENT SYNC
 function Engagement_Sync()
     while Start_Engine do
-        local player = windower.ffxi.get_player()
-        if player then
-            for i = #aggro_queue, 1, -1 do
-                local candidate = windower.ffxi.get_mob_by_id(aggro_queue[i])
-                if not candidate
-                    or not candidate.valid_target
-                    or not candidate.hpp or candidate.hpp <= 0
-                    or (candidate.claim_id ~= 0 and candidate.claim_id ~= player.id) then
-                    table.remove(aggro_queue, i)
-                end
-            end
-        end
-        if player and player.status == 1 then
-            -- Engaged means combat owns movement. Kill any leftover
-            -- Lazy follow state before doing engagement sync.
-            Stop_Follow()
-            local current = windower.ffxi.get_mob_by_target('t')
-            local current_ok =
-                current
-                and current.valid_target
-                and current.hpp and current.hpp > 0
-                and current.distance and math.sqrt(current.distance) <= 5
-            if not current_ok then
-                local switched = false
-                while #aggro_queue > 0 and not switched do
-                    local candidate_id = table.remove(aggro_queue, 1)
-                    local candidate = windower.ffxi.get_mob_by_id(candidate_id)
-                    if candidate and candidate.valid_target
-                        and candidate.hpp and candidate.hpp > 0
-                        and (candidate.claim_id == 0 or candidate.claim_id == player.id) then
-                        windower.add_to_chat(2, '[Lazy] Finishing that off, now dealing with: ' .. candidate.name)
-                        windower.send_command('input /target "' .. candidate.name .. '"')
-                        switched = true
-                    end
-                end
-                if not switched and last_damage_source_id then
-                    local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
-                    if attacker and attacker.valid_target
-                        and attacker.hpp and attacker.hpp > 0
-                        and (attacker.claim_id == 0 or attacker.claim_id == player.id)
-                        and (not current or attacker.id ~= current.id) then
-                        windower.add_to_chat(2, '[Lazy] Engaged target mismatch -- retargeting to ' .. attacker.name)
-                        windower.send_command('input /target "' .. attacker.name .. '"')
-                        switched = true
-                    end
-                end
-                if not switched then
-                    local party_ids = Get_Party_Claim_Ids()
-                    local mob = Find_Nearest_Party_Claimed_Target(party_ids)
-                    if mob and (not current or mob.id ~= current.id) then
-                        windower.add_to_chat(2, '[Lazy] Current target down -- joining party on: ' .. mob.name)
-                        windower.send_command('input /target "' .. mob.name .. '"')
-                        switched = true
-                    end
-                end
-            end
-        end
-        coroutine.sleep(10)
+        coroutine.sleep(2)
     end
 end
+-- TARGET MONITOR
 function Target_Monitor()
     while Start_Engine do
-        local player = windower.ffxi.get_player()
-        -- Never do target movement while already engaged.
-        if player and player.status == 1 then
-            Stop_Follow()
-        elseif player then
-            local target = windower.ffxi.get_mob_by_target('t')
-            if target and settings.target ~= '' and target.id ~= player.id then
-                local name_ok =
-                    string.lower(target.name or '') == string.lower(settings.target)
-                local in_range = true
-                if origin_x and target.x then
-                    in_range = Origin_Distance(target.x, target.y, target.z) <= origin_radius
+        local player =
+            windower.ffxi.get_player()
+        local target =
+            windower.ffxi.get_mob_by_target('t')
+        local target_id =
+            target and target.id
+        Debug.Target_Changed(target)
+        -- COMBAT LOCK OWNS EVERYTHING
+        if combat_locked_target_id then
+            pending_target_id = nil
+            pending_target_time = 0
+            -- FFXI has actually entered combat.
+            if player
+                and player.status == 1
+            then
+                if not combat_started then
+                    Debug.Log(
+                        '>>> COMBAT STARTED <<< target=' ..
+                        tostring(
+                            combat_locked_target_id
+                        )
+                    )
                 end
-                if not name_ok or not in_range or target.claim_id ~= 0 then
-                    Stop_Follow()
-                    windower.add_to_chat(2, 'Invalid target (' .. target.name .. ') - resetting')
-                    windower.send_command('input /target <me>')
-                elseif target.distance and math.sqrt(target.distance) <= Engage_Distance(FOLLOW_MELEE_RANGE)
-                    and active_profile.auto_engage ~= false then
-                    -- We are close enough. STOP FOLLOWING BEFORE ATTACKING.
-                    Stop_Follow()
-                    windower.send_command('input /attack on')
+                combat_started = true
+            -- Combat was previously active and has now
+            -- ended. This is the ONLY normal path that
+            -- releases the combat lock.
+            elseif combat_started then
+                Debug.Log(
+                    '>>> COMBAT ENDED <<< target=' ..
+                    tostring(
+                        combat_locked_target_id
+                    )
+                )
+                Clear_Combat_Target()
+            end
+            coroutine.sleep(0.1)
+        -- ALREADY ENGAGED WITHOUT OUR LOCK
+        elseif player
+            and player.status == 1
+        then
+            if target
+                and target.id
+            then
+                managed_target_id =
+                    target.id
+                combat_locked_target_id =
+                    target.id
+                engage_sent_target_id =
+                    target.id
+                combat_lock_time = nil
+                combat_started = true
+                pending_target_id = nil
+                pending_target_time = 0
+                Debug.Target(
+                    'ADOPTING EXISTING COMBAT TARGET',
+                    target
+                )
+            end
+        -- MANAGED TARGET OUTSIDE COMBAT
+        elseif managed_target_id then
+            if not target
+                or target.id ~= managed_target_id
+            then
+                local mob =
+                    windower.ffxi.get_mob_by_id(
+                        managed_target_id
+                    )
+                if mob
+                    and mob.valid_target
+                then
+                    Debug.Target(
+                        'TARGET MONITOR RESELECT',
+                        mob
+                    )
+                    Select_Target(mob)
                 end
             end
         end
-        coroutine.sleep(0.5)
+        coroutine.sleep(0.1)
     end
 end
+-- MAIN TARGETING LOOP
 function Targeting()
     while Start_Engine do
-        local player = windower.ffxi.get_player()
-        if player and player.status == 1 then
-            -- Combat has absolute priority over follow.
-            Stop_Follow()
-        elseif player then
-            if is_resting then
-                Stop_Follow()
-            elseif settings.assist ~= '' then
-                windower.send_command('input /assist ' .. settings.assist)
-                local target = windower.ffxi.get_mob_by_target('t')
-                if target and target.claim_id ~= 0 then
-                    local distance = target.distance and math.sqrt(target.distance)
-                    local stop_range = Engage_Distance(FOLLOW_MELEE_RANGE)
-                    if distance and distance > stop_range then
-                        Start_Follow(target.index, target.id)
+        local player =
+            windower.ffxi.get_player()
+        if player then
+            -- COMBAT LOCK
+            if combat_locked_target_id then
+                pending_target_id = nil
+                pending_target_time = 0
+                -- Follow_Monitor owns movement for the locked target.
+            -- RESTING
+            elseif is_resting then
+                windower.ffxi.follow(0)
+            -- PLAYER ALREADY ENGAGED
+            elseif player.status == 1 then
+                local target =
+                    windower.ffxi.get_mob_by_target('t')
+                if target
+                    and target.id
+                then
+                    managed_target_id =
+                        target.id
+                    combat_locked_target_id =
+                        target.id
+                    engage_sent_target_id =
+                        target.id
+                    combat_lock_time = nil
+                    combat_started = true
+                    pending_target_id = nil
+                    pending_target_time = 0
+                    Debug.Target(
+                        'PLAYER ALREADY ENGAGED - LOCKING',
+                        target
+                    )
+                    Debug.State(
+                        'EXISTING COMBAT LOCK'
+                    )
+                end
+                windower.ffxi.follow(0)
+            -- WAITING FOR TARGET SELECTION
+            elseif pending_target_id then
+                local confirmed =
+                    Confirm_Target()
+                if confirmed then
+                    local distance =
+                        confirmed.distance
+                        and math.sqrt(
+                            confirmed.distance
+                        )
+                    local stop_range =
+                        Stop_Range(confirmed)
+                    Debug.Target(
+                        'CONFIRMED TARGET WAITING FOR RANGE',
+                        confirmed
+                    )
+                    -- STILL TOO FAR AWAY:
+                    -- FOLLOW THE CONFIRMED TARGET.
+                    if distance
+                        and distance > stop_range
+                    then
+                        Debug.Target(
+                            'CONFIRMED TARGET OUT OF RANGE - FOLLOWING',
+                            confirmed
+                        )
+                        windower.ffxi.follow(
+                            confirmed.index
+                        )
+                    -- IN RANGE:
+                    -- stop following and engage.
+                    elseif distance
+                        and distance <= stop_range
+                    then
+                        windower.ffxi.follow(0)
+                        Debug.Target(
+                            'CONFIRMED TARGET IN ENGAGE RANGE',
+                            confirmed
+                        )
+                        Engage_Target(
+                            confirmed
+                        )
+                    -- Distance unavailable:
+                    -- use the confirmed target rather than
+                    -- getting stuck forever.
                     else
-                        -- In position: stop following before attacking.
-                        Stop_Follow()
-                        if active_profile.auto_engage ~= false then
-                            windower.send_command('input /attack on')
-                        end
+                        Debug.Target(
+                            'CONFIRMED TARGET HAS NO DISTANCE - ENGAGING',
+                            confirmed
+                        )
+                        windower.ffxi.follow(0)
+                        Engage_Target(
+                            confirmed
+                        )
+                    end
+                end
+            -- EXISTING MANAGED TARGET
+            elseif managed_target_id then
+                local target =
+                    windower.ffxi.get_mob_by_target('t')
+                if not target
+                    or target.id ~= managed_target_id
+                then
+                    local mob =
+                        windower.ffxi.get_mob_by_id(
+                            managed_target_id
+                        )
+                    if mob
+                        and mob.valid_target
+                    then
+                        Debug.Target(
+                            'MAIN LOOP RESELECT',
+                            mob
+                        )
+                        Select_Target(mob)
+                    else
+                        Debug.State(
+                            'MANAGED TARGET DEAD/GONE'
+                        )
+                        managed_target_id = nil
+                        pending_target_id = nil
+                        pending_target_time = 0
+                        engage_sent_target_id = nil
+                        combat_lock_time = nil
+                        combat_started = false
                     end
                 else
-                    Stop_Follow()
+                    local distance =
+                        target.distance
+                        and math.sqrt(
+                            target.distance
+                        )
+                    local stop_range =
+                        Stop_Range(target)
+                    -- OUT OF RANGE:
+                    -- FOLLOW THE TARGET.
+                    if distance
+                        and distance > stop_range
+                    then
+                        Debug.Target(
+                            'MANAGED TARGET OUT OF RANGE - FOLLOWING',
+                            target
+                        )
+                        windower.ffxi.follow(
+                            target.index
+                        )
+                    -- IN RANGE:
+                    -- stop following and engage.
+                    elseif distance
+                        and distance <= stop_range
+                    then
+                        windower.ffxi.follow(0)
+                        Engage_Target(
+                            target
+                        )
+                    -- No distance:
+                    -- engage rather than becoming stuck.
+                    else
+                        windower.ffxi.follow(0)
+                        Engage_Target(
+                            target
+                        )
+                    end
                 end
-                if not lockon_done and active_profile.auto_engage ~= false then
-                    windower.send_command('input /lockon')
+            -- ASSIST MODE
+            elseif settings.assist ~= '' then
+                windower.send_command(
+                    'input /assist ' ..
+                    settings.assist
+                )
+                local target =
+                    windower.ffxi.get_mob_by_target('t')
+                Debug.Target(
+                    'ASSIST TARGET',
+                    target
+                )
+                if target
+                    and target.valid_target
+                    and target.hpp
+                    and target.hpp > 0
+                then
+                    managed_target_id =
+                        target.id
+                    engage_sent_target_id = nil
+                    if target.distance
+                        and math.sqrt(
+                            target.distance
+                        ) <= Stop_Range(target)
+                    then
+                        Engage_Target(target)
+                    else
+                        windower.ffxi.follow(
+                            target.index
+                        )
+                    end
+                end
+                if not lockon_done
+                    and active_profile.auto_engage ~= false
+                then
+                    windower.send_command(
+                        'input /lockon'
+                    )
                     lockon_done = true
                 end
+            -- AUTOTARGET
             elseif settings.autotarget then
                 local target_id
                 local expected_name =
-                    (settings.target and settings.target ~= '')
+                    (
+                        settings.target
+                        and settings.target ~= ''
+                    )
                     and settings.target
                     or nil
-                local party_ids = Get_Party_Claim_Ids()
+                local party_ids =
+                    Get_Party_Claim_Ids()
                 if expected_name then
-                    target_id = Find_Named_Target(settings.target)
+                    target_id =
+                        Find_Named_Target(
+                            settings.target
+                        )
                 else
-                    target_id = Choose_Target(party_ids)
+                    target_id =
+                        Choose_Target(
+                            party_ids
+                        )
                 end
-                if target_id > 0 then
-                    local mob = windower.ffxi.get_mob_by_index(target_id)
-                    if mob and Is_Legitimate_Target(mob, expected_name, party_ids, false) then
+                if target_id <= 0 then
+                    Path_To_Origin()
+                else
+                    local mob =
+                        windower.ffxi.get_mob_by_index(
+                            target_id
+                        )
+                    if mob
+                        and Is_Legitimate_Target(
+                            mob,
+                            expected_name,
+                            party_ids,
+                            false
+                        )
+                    then
                         pathing_to_origin = false
                         path_tick = 0
-                        local distance = mob.distance and math.sqrt(mob.distance)
-                        local stop_range = Engage_Distance(FOLLOW_MELEE_RANGE)
-                        if distance and distance > stop_range then
-                            -- Still approaching. Follow the selected target.
-                            Start_Follow(mob.index, mob.id)
-                        else
-                            -- We have arrived. Follow MUST stop before
-                            -- the attack command is issued.
-                            Stop_Follow()
-                            windower.send_command('input /target "' .. mob.name .. '"')
-                            if active_profile.auto_engage ~= false then
-                                windower.send_command('input /attack on')
-                                if not lockon_done then
-                                    windower.send_command('input /lockon')
-                                    lockon_done = true
-                                end
-                            end
+                        managed_target_id =
+                            mob.id
+                        pending_target_id = nil
+                        pending_target_time = 0
+                        engage_sent_target_id = nil
+                        combat_lock_time = nil
+                        combat_started = false
+                        Debug.Target(
+                            'AUTOTARGET CHOSE',
+                            mob
+                        )
+                        Debug.State(
+                            'AFTER AUTOTARGET'
+                        )
+                        local distance =
+                            mob.distance
+                            and math.sqrt(mob.distance)
+                        if not Try_Ranged_Pull(
+                            mob,
+                            distance
+                        ) then
+                            Select_Target(mob)
                         end
                     else
-                        Stop_Follow()
+                        Path_To_Origin()
                     end
-                else
-                    Stop_Follow()
-                    Path_To_Origin()
                 end
             end
         end

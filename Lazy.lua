@@ -1,17 +1,19 @@
+-- LAZY
 require('chat')
 require('logger')
 require('tables')
 config = require('config')
 res = require('resources')
 packets = require('packets')
--- MODULES & FALLBACK DEFINITIONS 
+-- MODULES
 dofile(windower.addon_path .. 'skillchain.lua')
 dofile(windower.addon_path .. 'magicburst.lua')
 dofile(windower.addon_path .. 'DNCQueen.lua')
+dofile(windower.addon_path .. 'Debug.lua')
 dofile(windower.addon_path .. 'TargetLogic.lua')
 dofile(windower.addon_path .. 'JobLogic.lua')
 dofile(windower.addon_path .. 'settings.lua')
--- Fallback structures to prevent nil comparison errors
+-- FALLBACK STRUCTURES
 ws_sc_starter = ws_sc_starter or {}
 ws_sc_closers = ws_sc_closers or {}
 needed_buffs = needed_buffs or {}
@@ -27,18 +29,18 @@ targeting = targeting or {
     within_origin = true,
     only_unclaimed = true,
 }
--- ADDON 
+-- ADDON
 _addon.name = 'lazy'
 _addon.author = 'Ulli'
 _addon.version = '0.9'
 _addon.commands = {'lazy'}
--- GLOBAL STATE 
+-- GLOBAL STATE
 Start_Engine = false
 isCasting = false
 isBusy = 0
 buffactive = {}
 Action_Delay = 2
--- MOVEMENT / POSITION 
+-- MOVEMENT / POSITION
 origin_x = nil
 origin_y = nil
 origin_z = nil
@@ -55,16 +57,14 @@ PATH_STUCK_TIMEOUT = 8
 PATH_STUCK_EPSILON = 1
 origin_unreachable_since = nil
 ORIGIN_UNREACHABLE_TIMEOUT = 600
--- COMBAT STATE 
+-- COMBAT STATE
 local trust_ws_countdown = 0
 lockon_done = false
 ws_index = 1
 PlayerH = 0
 engaged_since = nil
 is_resting = false
--- DNC rotation state (dnc_flourish_pending, DNC_WALTZ_TIERS) and
--- Try_DNC_Actions() now live in DNCQueen.lua.
--- CAST TRACKING 
+-- CAST TRACKING
 self_buff_last_cast = {}
 self_ability_last_cast = {}
 haste_last_cast = {}
@@ -75,15 +75,12 @@ refresh_last_cast = {}
 party_buff_last_cast = {}
 entrust_last_cast = {}
 pending_cast = nil
--- JOB STATE 
+-- JOB STATE
 current_job = nil
 active_profile = nil
--- JOB PROFILES 
+-- JOB PROFILES
 JOB_PROFILES = {}
-local profile_list = {
-    'RDM', 'GEO', 'BLM', 'SCH', 'DNC',
-    'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'
-}
+local profile_list = {'RDM', 'GEO', 'BLM', 'SCH', 'DNC', 'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'} ---add your job here if not already done. 
 for _, job in ipairs(profile_list) do
     local path = windower.addon_path .. 'profiles/' .. job .. '.lua'
     local f = io.open(path, 'r')
@@ -91,55 +88,91 @@ for _, job in ipairs(profile_list) do
         f:close()
         local ok, err = pcall(dofile, path)
         if not ok then
-            windower.add_to_chat(167, '[Lazy] ERROR loading ' .. job .. '.lua: ' .. tostring(err))
-            windower.add_to_chat(167, '[Lazy] ' .. job .. ' profile NOT loaded -- fix the syntax error above and //lua reload lazy')
+            windower.add_to_chat(
+                167,
+                '[Lazy] ERROR loading ' .. job .. '.lua: ' .. tostring(err)
+            )
+            windower.add_to_chat(
+                167,
+                '[Lazy] ' .. job ..
+                ' profile NOT loaded -- fix the syntax error above and //lua reload lazy'
+            )
         end
     else
-        windower.add_to_chat(123, '[Lazy] Profile not found: ' .. job .. '.lua → using DEFAULT')
+        windower.add_to_chat(
+            123,
+            '[Lazy] Profile not found: ' .. job .. '.lua → using DEFAULT'
+        )
     end
 end
 JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
--- BACKLINE & DISENGAGE OVERRIDES 
+-- BACKLINE & DISENGAGE OVERRIDES
 local function Enforce_Backline_Rules()
     local player = windower.ffxi.get_player()
-    if not player or not active_profile then return end
+    if not player or not active_profile then
+        return
+    end
     if player.status == 1 and active_profile.auto_engage == false then
         windower.send_command('input /attack off')
     end
 end
 function Ensure_Debuff_Target()
     local player = windower.ffxi.get_player()
-    if not player or not active_profile then return end
+    if not player or not active_profile then
+        return
+    end
     if (active_profile.debuffs or active_profile.magic_burst)
-       and active_profile.auto_engage == false
-       and not windower.ffxi.get_mob_by_target('t') then
-        windower.send_command('input /target <p1>; wait 0.2; input /target <bt>')
+        and active_profile.auto_engage == false
+        and not windower.ffxi.get_mob_by_target('t')
+    then
+        windower.send_command(
+            'input /target <p1>; wait 0.2; input /target <bt>'
+        )
     end
 end
--- MOVEMENT DETECTION 
+-- MOVEMENT DETECTION
+local last_move_sample = 0
+local last_move_result = false
 function Is_Moving()
+    local now = os.clock()
+    if now - last_move_sample < 0.25 then
+        return last_move_result
+    end
     local player = windower.ffxi.get_player()
-    if not player then return false end
+    if not player then
+        return false
+    end
     local mob = windower.ffxi.get_mob_by_id(player.id)
-    if not mob then return false end
+    if not mob then
+        return false
+    end
     local moving = false
     if last_known_pos then
         local dx = mob.x - last_known_pos.x
         local dy = mob.y - last_known_pos.y
-        if (dx*dx + dy*dy) > (move_threshold * move_threshold) then
+        if (dx * dx + dy * dy) > (move_threshold * move_threshold) then
             moving = true
         end
     end
-    last_known_pos = { x = mob.x, y = mob.y }
+    last_known_pos = {
+        x = mob.x,
+        y = mob.y
+    }
+    last_move_sample = now
+    last_move_result = moving
     return moving
 end
--- JOB PROFILE 
+-- JOB PROFILE
 function Update_Job_Profile()
     local player = windower.ffxi.get_player()
-    if not player or not player.main_job then return end
+    if not player or not player.main_job then
+        return
+    end
     local job = player.main_job
-    if job == current_job then return end
+    if job == current_job then
+        return
+    end
     current_job = job
     active_profile = JOB_PROFILES[job] or JOB_PROFILES.DEFAULT
     self_buff_last_cast = {}
@@ -151,9 +184,12 @@ function Update_Job_Profile()
     refresh_last_cast = {}
     party_buff_last_cast = {}
     entrust_last_cast = {}
-    windower.add_to_chat(2, '[Lazy] Main job: ' .. job)
+    windower.add_to_chat(
+        2,
+        '[Lazy] Main job: ' .. job
+    )
 end
--- SETTINGS 
+-- SETTINGS
 defaults = {
     spell = '',
     spell_active = false,
@@ -164,15 +200,20 @@ defaults = {
     assist = '',
     buffs_active = true,
     cure_active = true,
-    rest_active = true,
+    rest_active = true,     
 }
 settings = config.load(defaults)
--- INCOMING PACKETS 
+
+-- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
-    if id ~= 0x028 then return end
+    if id ~= 0x028 then
+        return
+    end
     local action = packets.parse('incoming', data)
     local player = windower.ffxi.get_player()
-    if not player or action.Actor ~= player.id then return end
+    if not player or action.Actor ~= player.id then
+        return
+    end
     if action.Category == 4 then
         isCasting = false
         if pending_cast then
@@ -194,20 +235,20 @@ windower.register_event('incoming chunk', function(id, data)
         trust_ws_countdown = 5
     end
 end)
--- DEATH WATCH 
+
+-- DEATH WATCH
 local last_damage_source = nil
 last_damage_source_id = nil
 last_damage_taken_time = nil
 local last_damage_kind = nil
 local death_reported = false
--- Aggro queue: ids of things that have hit us that AREN'T our current
--- <t>. Adds go on the end as they hit us; we don't touch them while our
--- current target is still alive -- finish that fight first, then work
--- through whoever else started swinging on us, oldest first.
+-- AGGRO QUEUE
 aggro_queue = {}
 local AGGRO_QUEUE_CAP = 10
 local function Resolve_Attack_Name(param)
-    if not param or param == 0 then return nil end
+    if not param or param == 0 then
+        return nil
+    end
     local hit =
         res.monster_abilities[param]
         or res.spells[param]
@@ -216,10 +257,14 @@ local function Resolve_Attack_Name(param)
     return hit and hit.en or nil
 end
 windower.register_event('incoming chunk', function(id, data)
-    if id ~= 0x028 then return end
+    if id ~= 0x028 then
+        return
+    end
     local action = packets.parse('incoming', data)
     local player = windower.ffxi.get_player()
-    if not player then return end
+    if not player then
+        return
+    end
     local current = windower.ffxi.get_mob_by_target('t')
     local current_id = current and current.id
     local target_count = action['Target Count'] or 1
@@ -228,15 +273,14 @@ windower.register_event('incoming chunk', function(id, data)
             local reaction = action['Target ' .. t .. ' Action 1 Reaction']
             if reaction == 0 then
                 local actor_id = action.Actor
-                -- A trust curing/buffing you, or any party member's
-                -- action landing on you, still comes through with
-                -- Reaction == 0 -- same as an actual hit. Nothing on
-                -- our own side counts as "attacking" us.
                 if Is_Party_Member(actor_id) then
                     break
                 end
                 local actor = windower.ffxi.get_mob_by_id(actor_id)
-                last_damage_source = actor and actor.name or last_damage_source or 'something unseen'
+                last_damage_source =
+                    actor and actor.name
+                    or last_damage_source
+                    or 'something unseen'
                 last_damage_source_id = actor_id
                 last_damage_taken_time = os.clock()
                 last_damage_kind = Resolve_Attack_Name(action.Param)
@@ -263,7 +307,11 @@ end)
 function Death_Monitor()
     while Start_Engine do
         local player = windower.ffxi.get_player()
-        if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
+        if player
+            and player.vitals
+            and player.vitals.hp
+            and player.vitals.hp <= 0
+        then
             if not death_reported then
                 death_reported = true
                 local cause = last_damage_source or 'unknown causes'
@@ -272,7 +320,12 @@ function Death_Monitor()
                 elseif last_damage_source then
                     cause = cause .. ' (melee)'
                 end
-                windower.add_to_chat(167, '[Lazy] You died -- killed by ' .. cause .. '. Stopping Lazy.')
+                windower.add_to_chat(
+                    167,
+                    '[Lazy] You died -- killed by ' ..
+                    cause ..
+                    '. Stopping Lazy.'
+                )
                 Start_Engine = false
             end
         else
@@ -281,19 +334,23 @@ function Death_Monitor()
         coroutine.sleep(0.5)
     end
 end
--- OUTGOING PACKETS 
+
+-- OUTGOING PACKETS
 windower.register_event('outgoing chunk', function(id, data)
-    if id ~= 0x015 then return end
+    if id ~= 0x015 then
+        return
+    end
     local action = packets.parse('outgoing', data)
     PlayerH = action.Rotation
 end)
--- STATUS CHANGE LISTENERS 
+-- STATUS CHANGE LISTENERS
 windower.register_event('status change', function(new_status_id)
-    if new_status_id == 1 then -- Engaged
+    if new_status_id == 1 then
         Enforce_Backline_Rules()
     end
 end)
--- COMMANDS 
+
+-- COMMANDS
 windower.register_event('addon command', function(...)
     local raw_args = {...}
     local args = {}
@@ -308,24 +365,61 @@ windower.register_event('addon command', function(...)
         print('//lazy reload')
         print('//lazy save')
         print('//lazy show')
-        print('//lazy autotarget on/off')
+        print('//lazy debug on/off')
         print('//lazy target <name>')
         print('//lazy assist <player>')
         print('//lazy buffs on/off')
         print('//lazy cure on/off')
         print('//lazy range <yalms>')
         print('//lazy retrust')
+        print('//lazy leader')
+        print('//lazy follower <player>')
         return
-    end
+    end  
+
+    -- DEBUG  
+    if command == 'debug' then
+        local state = args[2]
+        if state == 'on' then
+            Debug.Set_Enabled(true)
+            windower.add_to_chat(207, '[Lazy] Debug: ON')
+        elseif state == 'off' then
+            Debug.Set_Enabled(false)
+            windower.add_to_chat(207, '[Lazy] Debug: OFF')
+        else
+            windower.add_to_chat(207, '[Lazy] Debug is ' .. (Debug.enabled and 'ON' or 'OFF'))
+        end
+        return
+    end  
+
+    -- START  
     if command == 'start' then
         local player = windower.ffxi.get_player()
-        if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
-            windower.add_to_chat(167, '[Lazy] You are dead. Stop being a floor decoration, then //lazy start again.')
+        if player
+            and player.vitals
+            and player.vitals.hp
+            and player.vitals.hp <= 0
+        then
+            windower.add_to_chat(
+                167,
+                '[Lazy] You are dead. Stop being a floor decoration, then //lazy start again.'
+            )
             return
         end
-        windower.add_to_chat(2, '....Starting Lazy Helper....')
-        Set_Origin()
-        if Start_Engine then return end
+        if Start_Engine then
+            return
+        end
+        windower.add_to_chat(
+            2,
+            '....Starting Lazy Helper....'
+        )
+        Set_Origin()|
+        
+        -- RESET TARGETLOGIC STATE
+        if Clear_Combat_Target then
+            Clear_Combat_Target()
+        end
+        lockon_done = false
         Start_Engine = true
         self_buff_last_cast = {}
         self_ability_last_cast = {}
@@ -334,6 +428,8 @@ windower.register_event('addon command', function(...)
         refresh_last_cast = {}
         party_buff_last_cast = {}
         entrust_last_cast = {}
+        dispel_last_cast = {}
+        mob_spell_last_cast = {}
         path_last_distance = nil
         path_last_progress_time = nil
         path_stuck_alerted = false
@@ -349,19 +445,18 @@ windower.register_event('addon command', function(...)
         party_activity = {}
         temp_assist_mob_id = nil
         is_resting = false
-        -- DEFAULT MODE: if nobody's explicitly picked leader or
-        -- follower (no assist target set, autotarget off), assume
-        -- leader. Checked once here, at startup. Deliberately does
-        -- NOT touch autotarget when assist is already set -- that's
-        -- follower mode correctly sitting with autotarget off, and
-        -- stomping it here would undo what //lazy follower set on
-        -- purpose and break the atomic leader/follower invariant.
+        -- DEFAULT MODE
         if settings.assist == '' and not settings.autotarget then
             settings.autotarget = true
-            windower.add_to_chat(207, '[Lazy] No mode selected -- defaulting to leader.')
+            windower.add_to_chat(
+                207,
+                '[Lazy] No mode selected -- defaulting to leader.'
+            )
         end
+        -- JOB / TRUST INITIALIZATION
         Update_Job_Profile()
         Snapshot_Trusts()
+        -- ENGINE COROUTINES
         coroutine.schedule(Engine, 0)
         coroutine.schedule(SC_Monitor, 0)
         coroutine.schedule(Target_Monitor, 0)
@@ -375,143 +470,217 @@ windower.register_event('addon command', function(...)
         coroutine.schedule(Engagement_Sync, 0)
         coroutine.schedule(Combat_Stall_Monitor, 0)
         return
-    end
+    end  
+    -- STOP  
     if command == 'stop' then
-        windower.add_to_chat(2, '....Stopping Lazy Helper....')
+        windower.add_to_chat(
+            2,
+            '....Stopping Lazy Helper....'
+        )
         Start_Engine = false
+        if Clear_Combat_Target then
+            Clear_Combat_Target()
+        end
         return
-    end
+    end  
+    -- RELOAD  
     if command == 'reload' then
-        windower.add_to_chat(2, '....Reloading Config....')
+        windower.add_to_chat(
+            2,
+            '....Reloading Config....'
+        )
         config.reload(settings)
         dofile(windower.addon_path .. 'settings.lua')
         return
-    end
+    end  
+    -- SAVE  
     if command == 'save' then
         local player = windower.ffxi.get_player()
-        if player then config.save(settings, player.name) end
+        if player then
+            config.save(settings, player.name)
+        end
         return
-    end
+    end  
+    -- SHOW
     if command == 'show' then
         Update_Job_Profile()
-        windower.add_to_chat(11, 'Main job: ' .. tostring(current_job))
-        windower.add_to_chat(11, 'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'))
-        windower.add_to_chat(11, 'Autotarget: ' .. tostring(settings.autotarget))
-        windower.add_to_chat(11, 'Spell: ' .. settings.spell)
-        windower.add_to_chat(11, 'Use Spell: ' .. tostring(settings.spell_active))
-        windower.add_to_chat(11, 'Weaponskill: ' .. settings.weaponskill)
-        windower.add_to_chat(11, 'Use Weaponskill:' .. tostring(settings.weaponskill_active))
-        windower.add_to_chat(11, 'Target: ' .. settings.target)
-        windower.add_to_chat(11, 'Buffs: ' .. tostring(settings.buffs_active))
-        windower.add_to_chat(11, 'Cure Bot: ' .. tostring(settings.cure_active))
-        windower.add_to_chat(11, 'Rest: ' .. tostring(settings.rest_active))
         local mode = 'OFF (neither leader nor follower)'
         if settings.assist ~= '' then
             mode = 'FOLLOWER (assisting ' .. settings.assist .. ')'
         elseif settings.autotarget then
             mode = 'LEADER'
         end
-        windower.add_to_chat(11, 'Mode: ' .. mode)
-        return
-    end
-    if command == 'autotarget' then
-        settings.autotarget = (args[2] == 'on')
-        windower.add_to_chat(3, 'Autotarget: ' .. tostring(settings.autotarget))
-        return
-    end
-    if command == 'target' then
-        settings.target = args[2] or ''
-        return
-    end
-    if command == 'assist' then
-        settings.assist = args[2] or ''
-        windower.add_to_chat(2, 'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'))
-        if settings.assist ~= '' then
-            windower.send_command('input /assist ' .. settings.assist)
-            if active_profile and active_profile.auto_engage == false then
-                windower.send_command('wait 0.4; input /attack off')
-            end
+        local lines = {
+            'Main job: ' .. tostring(current_job),
+            'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF'),
+            'Autotarget: ' .. tostring(settings.autotarget),
+            'Spell: ' .. settings.spell,
+            'Use Spell: ' .. tostring(settings.spell_active),
+            'Weaponskill: ' .. settings.weaponskill,
+            'Use Weaponskill: ' .. tostring(settings.weaponskill_active),
+            'Target: ' .. settings.target,
+            'Buffs: ' .. tostring(settings.buffs_active),
+            'Cure Bot: ' .. tostring(settings.cure_active),
+            'Rest: ' .. tostring(settings.rest_active),
+            'Mode: ' .. mode,
+        }
+        for _, line in ipairs(lines) do
+            windower.add_to_chat(11, line)
         end
         return
     end
-    -- LEADER / FOLLOWER 
-    --
-    -- Two atomic mode switches, on top of the existing granular
-    -- assist/autotarget commands -- the actual bug this fixes is that
-    -- assist and autotarget were two separate flags you had to keep in
-    -- sync by hand, and a stale saved assist value from a previous
-    -- session would silently win (Targeting() checks assist first),
-    -- leaving autotarget's on/off state meaningless without you
-    -- realizing it. These two commands always set BOTH flags together,
-    -- so there's no in-between state to get stuck in.
+    -- AUTOTARGET  
+    if command == 'autotarget' then
+        settings.autotarget = (args[2] == 'on')
+        windower.add_to_chat(
+            3,
+            'Autotarget: ' .. tostring(settings.autotarget)
+        )
+        return
+    end  
+    -- TARGET  
+    if command == 'target' then
+        settings.target = args[2] or ''
+        return
+    end  
+    -- ASSIST  
+    if command == 'assist' then
+        settings.assist = args[2] or ''
+        windower.add_to_chat(
+            2,
+            'Assist: ' ..
+            (settings.assist ~= '' and settings.assist or 'OFF')
+        )
+        if settings.assist ~= '' then
+            windower.send_command(
+                'input /assist ' .. settings.assist
+            )
+            if active_profile
+                and active_profile.auto_engage == false
+            then
+                windower.send_command(
+                    'wait 0.4; input /attack off'
+                )
+            end
+        end
+        return
+    end  
+    -- LEADER  
     if command == 'leader' then
         settings.assist = ''
         settings.autotarget = true
-        windower.add_to_chat(3, '[Lazy] Leader mode -- autotarget on, assist cleared.')
+        windower.add_to_chat(
+            3,
+            '[Lazy] Leader mode -- autotarget on, assist cleared.'
+        )
         return
-    end
+    end  
+    -- FOLLOWER  
     if command == 'follower' then
         local name = args[2]
         if not name or name == '' then
-            windower.add_to_chat(167, '[Lazy] Follower mode needs a name: //lazy follower <name>')
+            windower.add_to_chat(
+                167,
+                '[Lazy] Follower mode needs a name: //lazy follower <name>'
+            )
             return
         end
         settings.assist = name
         settings.autotarget = false
-        windower.add_to_chat(3, '[Lazy] Follower mode -- assisting ' .. name .. ', autotarget off.')
-        windower.send_command('input /assist ' .. name)
-        if active_profile and active_profile.auto_engage == false then
-            windower.send_command('wait 0.4; input /attack off')
+        windower.add_to_chat(
+            3,
+            '[Lazy] Follower mode -- assisting ' ..
+            name ..
+            ', autotarget off.'
+        )
+        windower.send_command(
+            'input /assist ' .. name
+        )
+        if active_profile
+            and active_profile.auto_engage == false
+        then
+            windower.send_command(
+                'wait 0.4; input /attack off'
+            )
         end
         return
-    end
+    end  
+    -- BUFFS  
     if command == 'buffs' then
         settings.buffs_active = (args[2] ~= 'off')
-        windower.add_to_chat(3, 'Buffs: ' .. tostring(settings.buffs_active))
+        windower.add_to_chat(
+            3,
+            'Buffs: ' .. tostring(settings.buffs_active)
+        )
         return
-    end
+    end  
+    -- CURE  
     if command == 'cure' then
         settings.cure_active = (args[2] ~= 'off')
-        windower.add_to_chat(3, 'Cure Bot: ' .. tostring(settings.cure_active))
+        windower.add_to_chat(
+            3,
+            'Cure Bot: ' .. tostring(settings.cure_active)
+        )
         return
-    end
+    end  
+    -- REST  
     if command == 'rest' then
         settings.rest_active = (args[2] ~= 'off')
-        windower.add_to_chat(3, 'Rest: ' .. tostring(settings.rest_active))
+        windower.add_to_chat(
+            3,
+            'Rest: ' .. tostring(settings.rest_active)
+        )
         return
-    end
+    end  
+    -- RANGE  
     if command == 'range' then
         local value = tonumber(args[2])
         if value then
             origin_radius = value
-            windower.add_to_chat(2, 'Origin radius set to ' .. origin_radius .. ' yalms')
+            windower.add_to_chat(
+                2,
+                'Origin radius set to ' ..
+                origin_radius ..
+                ' yalms'
+            )
         else
-            windower.add_to_chat(2, 'Current radius: ' .. origin_radius)
+            windower.add_to_chat(
+                2,
+                'Current radius: ' .. origin_radius
+            )
         end
         return
-    end
+    end  
+    -- RETRUST  
     if command == 'retrust' then
         Snapshot_Trusts()
         return
     end
 end)
--- HEADING / MOVEMENT 
+-- HEADING / MOVEMENT
 function HeadingTo(x, y)
-    local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
-    if not player then return 0 end
+    local player =
+        windower.ffxi.get_mob_by_id(
+            windower.ffxi.get_player().id
+        )
+    if not player then
+        return 0
+    end
     local dx = x - player.x
     local dy = y - player.y
     return math.atan2(dx, dy) - 1.5708
 end
+-- MAIN ENGINE
 function Engine()
     while Start_Engine do
         local player = windower.ffxi.get_player()
         if player then
             Update_Job_Profile()
             Enforce_Backline_Rules()
-            buffactive = convert_buff_list(player.buffs or {})
+            buffactive =
+                convert_buff_list(player.buffs or {})
             if isBusy < 1 then
-                pcall(Combat)
+                Safe_Tick('Combat', Combat)
             else
                 isBusy = isBusy - 1
             end
@@ -525,43 +694,73 @@ trust_resummon_last = {}
 function Snapshot_Trusts()
     tracked_trusts = {}
     local party = windower.ffxi.get_party()
-    if not party then return end
-    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+    if not party then
+        return
+    end
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
         local m = party[key]
-        if m and m.name and m.mob and m.mob.is_npc then
+        if m
+            and m.name
+            and m.mob
+            and m.mob.is_npc
+        then
             tracked_trusts[#tracked_trusts + 1] = m.name
         end
     end
     if #tracked_trusts > 0 then
-        windower.add_to_chat(2, '[Lazy] Tracking trusts for resummon: ' .. table.concat(tracked_trusts, ', '))
+        windower.add_to_chat(
+            2,
+            '[Lazy] Tracking trusts for resummon: ' ..
+            table.concat(tracked_trusts, ', ')
+        )
     end
 end
 function Trust_Tick()
-    if #tracked_trusts == 0 then return end
-    if pending_cast and os.clock() - pending_cast.sent_at > 10 then
+    if #tracked_trusts == 0 then
+        return
+    end
+    if pending_cast
+        and os.clock() - pending_cast.sent_at > 10
+    then
         pending_cast = nil
     end
-    if isBusy > 0 or isCasting or pending_cast then return end
+    if isBusy > 0
+        or isCasting
+        or pending_cast
+    then
+        return
+    end
     local party = windower.ffxi.get_party()
-    if not party then return end
+    if not party then
+        return
+    end
     local present = {}
-    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
         local m = party[key]
-        if m and m.name and m.hp and m.hp > 0 then
+        if m
+            and m.name
+            and m.hp
+            and m.hp > 0
+        then
             present[m.name] = true
         end
     end
     for _, name in ipairs(tracked_trusts) do
         if not present[name] then
             local spell = res.spells:with('name', name)
-            if spell and Cast_Spell_On(name, '<me>') then
+            if spell
+                and Cast_Spell_On(name, '<me>')
+            then
                 pending_cast = {
                     store = trust_resummon_last,
                     key = name,
                     spell_id = spell.id,
                     sent_at = os.clock(),
                 }
-                windower.add_to_chat(2, '[Lazy] Resummoning trust: ' .. name)
+                windower.add_to_chat(
+                    2,
+                    '[Lazy] Resummoning trust: ' .. name
+                )
                 return
             end
         end
@@ -573,19 +772,21 @@ function Trust_Monitor()
         coroutine.sleep(1)
     end
 end
--- BUFF LIST CONVERTER 
+-- BUFF LIST CONVERTER
 function convert_buff_list(bufflist)
     local buffs = {}
     for _, buff_id in pairs(bufflist or {}) do
         local buff = res.buffs[buff_id]
         if buff then
             if buff.english then
-                buffs[buff.english] = (buffs[buff.english] or 0) + 1
+                buffs[buff.english] =
+                    (buffs[buff.english] or 0) + 1
             end
-            buffs[buff_id] = (buffs[buff_id] or 0) + 1
+            buffs[buff_id] =
+                (buffs[buff_id] or 0) + 1
         end
     end
     return buffs
 end
--- INIT 
+-- INIT
 Update_Job_Profile()
