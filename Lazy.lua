@@ -413,8 +413,8 @@ windower.register_event('addon command', function(...)
             2,
             '....Starting Lazy Helper....'
         )
-        Set_Origin()|
-        
+        Set_Origin()
+
         -- RESET TARGETLOGIC STATE
         if Clear_Combat_Target then
             Clear_Combat_Target()

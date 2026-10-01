@@ -361,7 +361,8 @@ function Find_Nearest_Target()
                 not targeting.within_origin
                 or not origin_x
                 or not mob.x
- in_range = Origin_Distance(mob.x,mob.y,mob.z) <= origin_radius)
+                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius
+            )
             and (not targeting.only_unclaimed
                     or mob.claim_id == 0)
             and not Is_Unattackable(mob.id)
@@ -373,89 +374,8 @@ function Find_Nearest_Target()
 end
 -- PARTY / TRUST HELPERS
 function Is_Party_Member(actor_id)
-    if not actor_id then
-        return false
-    end
-    local party =
-        windower.ffxi.get_party()
-    if    local party = windower.ffxi.get_party()
-    if not party then return false end
-    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        local id = m and ((m.mob and m.mob.id) or m.id)
-        if id == actor_id then return true end
-    end
-    return false
-end
-function Is_Solo_Leader()
-    if not settings or settings.assist ~= '' then return false end
+    if not actor_id then return false end
     local party = windower.ffxi.get_party()
-    if not party then return true end
-    for _, key in ipairs({'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        if m and (not m.mob or not m.mob.is_npc) then return false end
-    end
-    return true
-end
-function Get_Party_Claim_Ids()
-    local ids = {}
-    local party = windower.ffxi.get_party()
-    if not party then return ids end
-    local player = windower.ffxi.get_player()
-    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        local id = m and ((m.mob and m.mob.id) or m.id)
-        if id and (not player or id ~= player.id) then ids[id] = true end
-    end
-    return ids
-end
-function Find_Party_Target(party_ids)
-    if not party_ids or next(party_ids) == nil then return nil end
-    local mob_array = windower.ffxi.get_mob_array()
-    if not mob_array then return nil end
-    for index, mob in pairs(mob_array) do
-        if mob.valid_target
-            and mob.hpp and mob.hpp > 0
-            and not Is_Unattackable(mob.id)
-            and mob.claim_id and party_ids[mob.claim_id]
-            and (not (origin_x and mob.x)
-                or Origin_Distance(mob.x, mob.y, mob.z) <= origin_radius)
-        then
-            return index
-        end
-    end
-    return nil
-end not party then
-        return false
-    end
-    for _, key in ipairs({
-        'p0',
-        'p1',
-        'p2',
-        'p3',
-        'p4',
-        'p5'
-    }) do
-        local m = party[key]
-        local id =
-            m
-            and (
-                (m.mob and m.mob.id)
-                or m.id
-            )
-        if id == actor_id then
-            return true
-        end
-    end
-    return false
-end
-function Is_Solo_Leader()
-    if not settings
-        or settings.assist ~= ''
-    then
-        return false
-    end
-       local party = windower.ffxi.get_party()
     if not party then return false end
     for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
         local m = party[key]
