@@ -23,7 +23,7 @@ JOB_PROFILES.GEO = {
             -- Geo-Poison specifically so Radial Arcana (which needs
             -- a pet out) has something to use it on. Placed first so
             -- it's tried before Geo-Frailty whenever there's no pet.
-            name = 'Geo-Poison',
+            name = 'Geo-Frailty',
             target = '<bt>',
             interval = 1,
             require_no_pet = true,
@@ -44,7 +44,7 @@ JOB_PROFILES.GEO = {
         interval = 20, -- seconds; blind safety cast, not gated on buff detection
     },
 
-    magic_burst = true,
+    magic_burst = false,
 
     burst_spells = {
         Aero = { 'Aero V', 'Aero IV', 'Aero III' },

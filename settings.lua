@@ -19,7 +19,6 @@ magic_burst_active = true
 -- Mobs Lazy should NEVER cast settings.spell on.
 -- Names are matched case-insensitively.
 spell_blacklist = {
-	'Locus Colibri',
 }
 -- DISPEL WHITELIST 
 -- Mobs Lazy is allowed to safety-cast Dispel (or Finale, for BRD)
@@ -102,7 +101,7 @@ subjob_abilities = {
 	DNC = {
 		{
 			name = 'Haste Samba',
-			interval = 2,
+			interval = 1.75,
 		},
 	},
 }

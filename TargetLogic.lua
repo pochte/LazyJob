@@ -271,9 +271,10 @@ end
 function Find_Named_Target(target_name)
     local mob_array =
         windower.ffxi.get_mob_array()
+    if not mob_array then return nil end
     local candidates = {}
     for key, mob in pairs(mob_array) do
-        if mob.distance then
+        if mob and mob.distance and not Is_Player_Pet(mob) then
             candidates[#candidates + 1] = {
                 key = key,
                 mob = mob,
@@ -329,9 +330,10 @@ end
 function Find_Nearest_Target()
     local mob_array =
         windower.ffxi.get_mob_array()
+    if not mob_array then return -1 end
     local candidates = {}
     for key, mob in pairs(mob_array) do
-        if mob.distance then
+        if mob and mob.distance and not Is_Player_Pet(mob) then
             candidates[#candidates + 1] = {
                 key = key,
                 mob = mob,
@@ -411,7 +413,9 @@ function Find_Party_Target(party_ids)
     local mob_array = windower.ffxi.get_mob_array()
     if not mob_array then return nil end
     for index, mob in pairs(mob_array) do
-        if mob.valid_target
+        if mob
+            and not Is_Player_Pet(mob)
+            and mob.valid_target
             and mob.hpp and mob.hpp > 0
             and not Is_Unattackable(mob.id)
             and mob.claim_id and party_ids[mob.claim_id]
@@ -429,7 +433,9 @@ function Find_Nearest_Party_Claimed_Target(party_ids)
     if not mob_array then return nil end
     local candidates = {}
     for _, mob in pairs(mob_array) do
-        if mob.valid_target
+        if mob
+            and not Is_Player_Pet(mob)
+            and mob.valid_target
             and mob.hpp and mob.hpp > 0
             and not Is_Unattackable(mob.id)
             and mob.claim_id and party_ids[mob.claim_id]
@@ -443,9 +449,19 @@ function Find_Nearest_Party_Claimed_Target(party_ids)
        table.sort(candidates, function(a, b) return a.dist < b.dist end)
     return candidates[1] and candidates[1].mob
 end
+-- PLAYER PET / LUPON FILTER
+-- Windower marks summoned pets with is_pet; owner_id is a fallback for
+-- mob records that expose ownership without the convenience flag.
+function Is_Player_Pet(mob)
+    if not mob then return false end
+    if mob.is_pet == true then return true end
+    local owner_id = tonumber(mob.owner_id)
+    return owner_id ~= nil and owner_id > 0
+end
+
 -- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
-    if not mob or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then return false end
+    if not mob or Is_Player_Pet(mob) or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then return false end
     if origin_x and mob.x and Origin_Distance(mob.x, mob.y, mob.z) > origin_radius then
         return false
     end
@@ -464,7 +480,13 @@ function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
     end
     if ours then return true end
     if already_engaged and player and player.status == 1 then return true end
-    return Is_Targetable_Monster(mob.name)
+    -- Not claimed by us/the party, and not something we're already
+    -- fighting -- being on the autotarget whitelist by name doesn't
+    -- override that. This used to fall through to
+    -- Is_Targetable_Monster(mob.name), which only checks the name and
+    -- ignores claim_id entirely -- so a mob a stranger claimed still
+    -- came back "legitimate" as long as it was on the whitelist.
+    return false
 end
 function Choose_Target(party_ids)
     if not windower.ffxi.get_player() then return -1 end
@@ -621,6 +643,11 @@ function Engage_Target(mob)
         )
         return false
     end
+    -- NEVER engage a player-owned pet or Luopan.
+    if Is_Player_Pet(mob) then
+        Debug.Target('ENGAGE BLOCKED - PLAYER PET/LUPON', mob)
+        return false
+    end
     -- COMBAT ALREADY LOCKED
     if combat_locked_target_id then
         if combat_locked_target_id == mob.id then
@@ -681,6 +708,22 @@ function Engage_Target(mob)
     if Is_Unattackable(mob.id) then
         Debug.Target(
             'BLOCKED - MARKED UNATTACKABLE',
+            mob
+        )
+        return false
+    end
+    -- CLAIMED BY SOMEONE ELSE
+    -- Belt-and-suspenders: the managed-target loop already drops a
+    -- target the moment someone else's claim shows up, but check again
+    -- here too in case a claim landed in the gap between that check and
+    -- this call -- never commit the combat lock to a fight that was
+    -- never ours.
+    if mob.claim_id ~= 0
+        and mob.claim_id ~= player.id
+        and not Get_Party_Claim_Ids()[mob.claim_id]
+    then
+        Debug.Target(
+            'ENGAGE BLOCKED - CLAIMED BY SOMEONE ELSE',
             mob
         )
         return false
@@ -1127,6 +1170,28 @@ function Targeting()
                         combat_lock_time = nil
                         combat_started = false
                     end
+                elseif target.claim_id ~= 0
+                    and target.claim_id ~= player.id
+                    and not Get_Party_Claim_Ids()[target.claim_id]
+                then
+                    -- Someone else claimed it. Waiting for FFXI's
+                    -- "cannot attack" message only catches this once
+                    -- we're already in range trying to attack -- from
+                    -- any further out, Lazy just sat there following
+                    -- a fight that was never going to be ours, right
+                    -- up until it died to someone else. Drop it now
+                    -- and let the next tick pick something else.
+                    Debug.Target(
+                        'MANAGED TARGET CLAIMED BY SOMEONE ELSE',
+                        target
+                    )
+                    managed_target_id = nil
+                    pending_target_id = nil
+                    pending_target_time = 0
+                    engage_sent_target_id = nil
+                    combat_lock_time = nil
+                    combat_started = false
+                    windower.ffxi.follow(0)
                 else
                     local distance =
                         target.distance
@@ -1178,6 +1243,7 @@ function Targeting()
                     target
                 )
                 if target
+                    and not Is_Player_Pet(target)
                     and target.valid_target
                     and target.hpp
                     and target.hpp > 0
