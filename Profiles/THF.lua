@@ -16,7 +16,7 @@ JOB_PROFILES.THF = {
 	},
 
 	ws_sc_starter = {
-		"Rudra's Storm",
+		"Evisceration",
 		1000,
 	},
 
