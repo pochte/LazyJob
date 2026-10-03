@@ -1,6 +1,7 @@
 -- COR JOB PROFILE 
 -- Corsair -- Rolls, Quick Draw, ranged weaponskills.
 -- Loaded by Lazy.lua into JOB_PROFILES.COR 
+dofile(windower.addon_path .. 'rolls.lua')
 JOB_PROFILES.COR = {
 	auto_engage = true,
 	use_weaponskills = true,

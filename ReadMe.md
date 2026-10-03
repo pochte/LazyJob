@@ -19,6 +19,7 @@ Simple helper for farming XP/CP/Trash items. So far includes:
 * //lazy reload
 * //lazy save
 * //lazy show
+* //lazy debug on|off
 * //lazy leader
 * //lazy follower <player>
 * //lazy autotarget on|off
@@ -46,6 +47,14 @@ Saves the current settings for the current character.
 Displays the current Lazy status, including main job, assist target,
 autotarget state, spell/WS settings, buffs, cure bot, rest, and current
 leader/follower mode.
+
+#### //lazy debug on|off
+Toggles verbose TargetLogic tracing (default: off). While on, every target
+pick, follow decision, and combat-lock state change gets written both to
+chat and to `debug/logs/TargetLogic_Debug.txt`, and outgoing attack packets
+get traced too. Run with no argument to print whether it's currently on or
+off. This is a troubleshooting tool, not something to leave on day to day
+— it's noisy.
 
 #### //lazy leader
 Switches Lazy into leader mode. Clears the assist target and enables
@@ -107,6 +116,12 @@ disable the feature.
 If Lazy is hit while resting and the attacker is a valid, unclaimed target
 (or claimed by you), Lazy will target and engage that attacker.
 
+#### //lazy range <yalms>
+Sets (or, with no argument, prints) the origin radius — how far from your
+anchored origin point (set automatically on `//lazy start`, wherever you
+were standing) Lazy is willing to hunt or path to. Mobs outside this
+radius are ignored by autotarget/named-target alike.
+
 #### //lazy retrust
 Lazy snapshots which party slots are Trusts when you `//lazy start`, and
 resummons any of them that die for the rest of the session (player
@@ -118,20 +133,19 @@ up whatever you swapped in instead.
 ### Job profiles
 Lazy is main-job aware — it auto-detects your current main job and switches
 behavior profiles (`//lazy show` prints which one is active). Profiles live
-in the `JOB_PROFILES` table near the top of `Lazy.lua`, not `settings.lua`.
-Currently defined: `RDM` (buff maintenance, Haste II), `WHM` (cure bot,
-Auspice), `WAR` (Great Axe: Upheaval opener, Ukko's Fury closer, Hasso/
-Berserk/Blood Rage/Aggressor before swinging), and `THF` (Conspirator kept
-up, Feint + Sneak Attack + Trick Attack before every WS, Rudra's Storm). Unlisted
-jobs fall back to `DEFAULT`.
+one-per-file in `Profiles/<JOB>.lua`, loaded automatically by `Lazy.lua`.
+
+All jobs with a file in `Profiles/` are done and ready to use — check that
+folder for the current list. Future jobs are to be added the same way, one
+file at a time. Any job without a profile yet falls back to `DEFAULT`.
 
 A profile can override `ws_sc_starter`, `ws_sc_closers`, `needed_buffs`, and
 `food` — if it doesn't, those fall back to the plain values in
 `settings.lua`. So switching your main job in-game actually switches your
 whole WS/JA/food kit automatically for any job with a profile; jobs without
 one just keep using whatever's in `settings.lua`, same as before job
-profiles existed. Edit `JOB_PROFILES` directly to tweak any of this, or add
-a new job's profile the same way.
+profiles existed. Edit the relevant `Profiles/<JOB>.lua` file to tweak any
+of this, or add a new job's profile the same way.
 
 ### settings.xml
 ```xml
