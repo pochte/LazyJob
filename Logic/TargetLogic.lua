@@ -589,6 +589,9 @@ function Select_Target(mob)
     )
     return true
 end
+confirm_fail_count = confirm_fail_count or {}
+local CONFIRM_FAIL_LIMIT = 2 -- consecutive timeouts before giving up on this mob
+
 function Confirm_Target()
     if not pending_target_id then
         return nil
@@ -605,6 +608,7 @@ function Confirm_Target()
         Debug.State(
             'AFTER TARGET CONFIRM'
         )
+        confirm_fail_count[pending_target_id] = nil
         pending_target_id = nil
         pending_target_time = 0
         return target
@@ -616,6 +620,28 @@ function Confirm_Target()
         Debug.State(
             'TARGET CONFIRM TIMEOUT'
         )
+        -- /target "name" grabs the nearest mob with that name, with no
+        -- way to specify a particular instance. If a nearer same-named
+        -- mob (one claimed by someone else, say) keeps winning the pick
+        -- instead of the one we actually chose, <t> never matches
+        -- pending_target_id and this times out every time. A single
+        -- timeout is normal jitter; repeated ones mean by-name
+        -- selection genuinely can't reach this specific mob right now
+        -- -- bench it and drop managed_target_id too, so Choose_Target
+        -- picks something else next tick instead of retrying the same
+        -- doomed selection forever.
+        local failed_id = pending_target_id
+        confirm_fail_count[failed_id] =
+            (confirm_fail_count[failed_id] or 0) + 1
+        if confirm_fail_count[failed_id] >= CONFIRM_FAIL_LIMIT then
+            Debug.Log(
+                '>>> GIVING UP ON TARGET (by-name select unreliable) <<< target=' ..
+                tostring(failed_id)
+            )
+            unattackable_until[failed_id] = os.clock() + 20
+            confirm_fail_count[failed_id] = nil
+            managed_target_id = nil
+        end
         pending_target_id = nil
         pending_target_time = 0
     end
