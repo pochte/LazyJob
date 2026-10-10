@@ -1,15 +1,15 @@
 <?xml version="1.1" ?>
 <settings>
     <global>
+        <assist />
         <autotarget>false</autotarget>
-        <spell>Sinker Drill</spell>
+        <buffs_active>true</buffs_active>
+        <cure_active>true</cure_active>
+        <rest_active>true</rest_active>
+        <spell />
         <spell_active>false</spell_active>
         <target />
-        <weaponskill>Expiacion</weaponskill>
-        <weaponskill_active>true</weaponskill_active>
+        <weaponskill />
+        <weaponskill_active>false</weaponskill_active>
     </global>
-    <baelfire>
-        <autotarget>true</autotarget>
-        <target>rank eft</target>
-    </baelfire>
 </settings>

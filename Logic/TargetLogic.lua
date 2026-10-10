@@ -449,14 +449,28 @@ function Find_Nearest_Party_Claimed_Target(party_ids)
        table.sort(candidates, function(a, b) return a.dist < b.dist end)
     return candidates[1] and candidates[1].mob
 end
--- PLAYER PET / LUPON FILTER
--- Windower marks summoned pets with is_pet; owner_id is a fallback for
--- mob records that expose ownership without the convenience flag.
+-- PLAYER PET / LUOPAN FILTER
+-- `is_pet` and `owner_id` are not real fields on Windower's mob table --
+-- checking them was a silent no-op, always false, for every mob. The
+-- documented, reliable signal is `pet_index` on a PC's own mob entry: it
+-- points at their active pet's index in the mob array (Luopan, avatar,
+-- automaton, wyvern, charmed pet -- any of them, for any party member,
+-- not just yourself). A mob is a player's pet if its index matches
+-- anyone in the party's pet_index.
 function Is_Player_Pet(mob)
-    if not mob then return false end
-    if mob.is_pet == true then return true end
-    local owner_id = tonumber(mob.owner_id)
-    return owner_id ~= nil and owner_id > 0
+    if not mob or not mob.index then return false end
+    local party = windower.ffxi.get_party()
+    if not party then return false end
+    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
+        local m = party[key]
+        if m and m.mob and m.mob.pet_index
+            and m.mob.pet_index > 0
+            and m.mob.pet_index == mob.index
+        then
+            return true
+        end
+    end
+    return false
 end
 
 -- TARGET LEGITIMACY
@@ -529,6 +543,8 @@ function Clear_Combat_Target()
     combat_started = false
 end
 -- EXACT TARGET SELECTION
+last_select_sent = last_select_sent or 0
+engage_retry_time = engage_retry_time or 0
 function Select_Target(mob)
     if not mob
         or not mob.id
@@ -551,6 +567,22 @@ function Select_Target(mob)
     if not player then
         return false
     end
+    -- Follow_Monitor (0.2s) and Target_Monitor (0.1s) both call this
+    -- whenever <t> doesn't match yet. It used to restart the pending
+    -- timer on every call, so Confirm_Target could never time out --
+    -- a wrong same-named mob winning /target would retry forever.
+    -- If we're already selecting this mob, keep the original timer
+    -- and only re-send the command about once a second.
+    local now = os.clock()
+    if pending_target_id == mob.id then
+        if now - (last_select_sent or 0) < 1 then
+            return true
+        end
+    else
+        pending_target_id = mob.id
+        pending_target_time = now
+    end
+    last_select_sent = now
     Debug.Target(
         'SELECT',
         mob
@@ -558,21 +590,24 @@ function Select_Target(mob)
     Debug.State(
         'BEFORE SELECT'
     )
-    pending_target_id = mob.id
-    pending_target_time = os.clock()
-    packets.inject(
-        packets.new(
-            'incoming',
-            0x058,
-            {
-                ['Player'] = player.id,
-                ['Target'] = mob.id,
-                ['Player Index'] = player.index,
-            }
-        )
+    -- /target by name is the real, reliable way to set <t> -- it's
+    -- what every other targeting call site in this file already uses
+    -- (//lazy target, //lazy fight, Target_Monitor, Engagement_Sync).
+    -- The previous approach here -- injecting a fake *incoming* 0x058
+    -- packet -- doesn't reliably set the client's actual current
+    -- target, since target selection is local client state, not
+    -- something driven by an incoming server packet. That's almost
+    -- certainly why engagement failed intermittently: Confirm_Target
+    -- would time out waiting for a <t> the injected packet never
+    -- actually produced.
+    windower.send_command(
+        'input /target "' .. mob.name .. '"'
     )
     return true
 end
+confirm_fail_count = confirm_fail_count or {}
+local CONFIRM_FAIL_LIMIT = 2 -- consecutive timeouts before giving up on this mob
+
 function Confirm_Target()
     if not pending_target_id then
         return nil
@@ -589,6 +624,7 @@ function Confirm_Target()
         Debug.State(
             'AFTER TARGET CONFIRM'
         )
+        confirm_fail_count[pending_target_id] = nil
         pending_target_id = nil
         pending_target_time = 0
         return target
@@ -600,6 +636,28 @@ function Confirm_Target()
         Debug.State(
             'TARGET CONFIRM TIMEOUT'
         )
+        -- /target "name" grabs the nearest mob with that name, with no
+        -- way to specify a particular instance. If a nearer same-named
+        -- mob (one claimed by someone else, say) keeps winning the pick
+        -- instead of the one we actually chose, <t> never matches
+        -- pending_target_id and this times out every time. A single
+        -- timeout is normal jitter; repeated ones mean by-name
+        -- selection genuinely can't reach this specific mob right now
+        -- -- bench it and drop managed_target_id too, so Choose_Target
+        -- picks something else next tick instead of retrying the same
+        -- doomed selection forever.
+        local failed_id = pending_target_id
+        confirm_fail_count[failed_id] =
+            (confirm_fail_count[failed_id] or 0) + 1
+        if confirm_fail_count[failed_id] >= CONFIRM_FAIL_LIMIT then
+            Debug.Log(
+                '>>> GIVING UP ON TARGET (by-name select unreliable) <<< target=' ..
+                tostring(failed_id)
+            )
+            unattackable_until[failed_id] = os.clock() + 20
+            confirm_fail_count[failed_id] = nil
+            managed_target_id = nil
+        end
         pending_target_id = nil
         pending_target_time = 0
     end
@@ -818,14 +876,22 @@ function Stop_Range(mob)
     end
     return MELEE_ENGAGE_RANGE
 end
-local FOLLOW_MELEE_RANGE = 3
 function Follow_Monitor()
     while Start_Engine do
         if combat_locked_target_id then
             local target = windower.ffxi.get_mob_by_id(combat_locked_target_id)
             if target and target.valid_target then
+                -- Same Stop_Range() everything else in this file uses,
+                -- not a separate hardcoded distance -- a job with its
+                -- own engage_distance (THF's ranged-pull setup, say)
+                -- was getting dragged back to a flat 3 yalms the moment
+                -- it locked onto something, ignoring that override.
+                -- This is also what actually re-chases a target that
+                -- runs off (e.g. hate switching to a ranged party
+                -- member) once combat is already locked in.
                 local distance = target.distance and math.sqrt(target.distance)
-                if distance and distance > FOLLOW_MELEE_RANGE then
+                local stop_range = Stop_Range(target)
+                if distance and distance > stop_range then
                     windower.ffxi.follow(target.index)
                 else
                     windower.ffxi.follow(0)
@@ -998,6 +1064,72 @@ function Target_Monitor()
                     )
                 )
                 Clear_Combat_Target()
+            else
+                -- Pre-engage lock that never actually reached combat.
+                -- If the target died, despawned, or otherwise vanished
+                -- before we got there, nothing was releasing this --
+                -- Targeting()/Follow_Monitor just quietly idled on it
+                -- forever, which is the "staring into space" freeze.
+                local locked =
+                    windower.ffxi.get_mob_by_id(
+                        combat_locked_target_id
+                    )
+                if not locked
+                    or not locked.valid_target
+                    or not locked.hpp
+                    or locked.hpp <= 0
+                then
+                    Debug.Log(
+                        '>>> PRE-ENGAGE TARGET LOST <<< target=' ..
+                        tostring(
+                            combat_locked_target_id
+                        )
+                    )
+                    Clear_Combat_Target()
+                else
+                    -- Lock held, target alive, but FFXI never put us in
+                    -- combat. /attack on is only sent once (in
+                    -- Engage_Target) and gets silently ignored if we're
+                    -- mid-cast (an RDM is nearly always casting
+                    -- something) -- then nothing ever resent it, and we
+                    -- stood there holding the lock forever. Resend every
+                    -- couple of seconds while in range, and give up on
+                    -- the mob if it still hasn't engaged after 10s.
+                    local now = os.clock()
+                    local lock_age =
+                        combat_lock_time
+                        and (now - combat_lock_time)
+                        or 0
+                    if lock_age > 10 then
+                        Debug.Log(
+                            '>>> ENGAGE NEVER STARTED - GIVING UP <<< target=' ..
+                            tostring(combat_locked_target_id)
+                        )
+                        unattackable_until[combat_locked_target_id] =
+                            now + 15
+                        Clear_Combat_Target()
+                    elseif lock_age >= 2
+                        and not isCasting
+                        and now - (engage_retry_time or 0) >= 2
+                    then
+                        local cur = windower.ffxi.get_mob_by_target('t')
+                        local dist =
+                            locked.distance
+                            and math.sqrt(locked.distance)
+                        if cur
+                            and cur.id == locked.id
+                            and dist
+                            and dist <= Stop_Range(locked) + 1
+                        then
+                            engage_retry_time = now
+                            Debug.Log(
+                                '>>> RESENDING /attack on <<< target=' ..
+                                tostring(locked.id)
+                            )
+                            windower.send_command('input /attack on')
+                        end
+                    end
+                end
             end
             coroutine.sleep(0.1)
         -- ALREADY ENGAGED WITHOUT OUR LOCK
@@ -1183,6 +1315,22 @@ function Targeting()
                     -- and let the next tick pick something else.
                     Debug.Target(
                         'MANAGED TARGET CLAIMED BY SOMEONE ELSE',
+                        target
+                    )
+                    managed_target_id = nil
+                    pending_target_id = nil
+                    pending_target_time = 0
+                    engage_sent_target_id = nil
+                    combat_lock_time = nil
+                    combat_started = false
+                    windower.ffxi.follow(0)
+                elseif Is_Unattackable(target.id) then
+                    -- Benched (rejected / couldn't be selected). The
+                    -- managed branch kept this id and Engage_Target just
+                    -- returned false every tick -- standing there until
+                    -- the bench expired. Drop it and pick another.
+                    Debug.Target(
+                        'MANAGED TARGET BENCHED - DROPPING',
                         target
                     )
                     managed_target_id = nil

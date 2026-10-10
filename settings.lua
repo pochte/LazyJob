@@ -16,9 +16,21 @@ ws_sc_closers = {
 -- skillchain window for magic burst damage.
 magic_burst_active = true
 -- SPELL BLACKLIST 
--- Mobs Lazy should NEVER cast settings.spell on.
+-- Mobs Lazy should NEVER debuff, safety-dispel, or cast settings.spell
+-- on outside of a magic burst. Separate from magic_burst_blacklist
+-- below -- a mob can be fine to debuff but dangerous to burst on (big
+-- burst damage spikes provoke some mobs in ways a plain hit or debuff
+-- doesn't), or the other way around, so the two lists are independent.
+-- A mob that's unsafe for everything goes on both.
 -- Names are matched case-insensitively.
 spell_blacklist = {
+}
+-- MAGIC BURST BLACKLIST 
+-- Mobs Lazy should NEVER land a magic burst on specifically (checked
+-- only by Try_Magic_Burst, nothing else). See spell_blacklist above
+-- for the general debuff/dispel/settings.spell blacklist.
+-- Names are matched case-insensitively.
+magic_burst_blacklist = {
 }
 -- DISPEL WHITELIST 
 -- Mobs Lazy is allowed to safety-cast Dispel (or Finale, for BRD)

@@ -1,20 +1,24 @@
 JOB_PROFILES.RDM = {
     auto_engage = true,
     use_weaponskills = true,
-    weaponskills = {
-        primary_ws = 'Savage Blade',
-        min_tp = 1000,
+    ws_sc_starter = {
+        'Savage Blade',
+        1000,
+    },
+    ws_sc_closers = {
+        'Savage Blade',
     },
     self_buffs = {
         { name = 'Haste II', interval = 23 },
+        { name = 'Refresh III', interval = 8 },
         { name = 'Temper II', interval = 5 },
         { name = 'Gain-STR', interval = 15 },
         { name = 'Enfire II', interval = 20 },
     },
     debuffs = {
-        { name = 'Distract III' },
-        { name = 'Inundation' },
-        { name = 'Dia III' },
+        { name = 'Distract III', once_per_mob = true },
+        { name = 'Inundation', once_per_mob = true },
+        { name = 'Dia III', once_per_mob = true },
     },
     party_buffs = {
         {

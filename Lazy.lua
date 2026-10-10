@@ -6,12 +6,15 @@ config = require('config')
 res = require('resources')
 packets = require('packets')
 -- MODULES
-dofile(windower.addon_path .. 'skillchain.lua')
-dofile(windower.addon_path .. 'magicburst.lua')
-dofile(windower.addon_path .. 'DNCQueen.lua')
-dofile(windower.addon_path .. 'Debug.lua')
-dofile(windower.addon_path .. 'TargetLogic.lua')
-dofile(windower.addon_path .. 'JobLogic.lua')
+dofile(windower.addon_path .. 'Logic/skillchain.lua')
+dofile(windower.addon_path .. 'Logic/magicburst.lua')
+dofile(windower.addon_path .. 'Logic/dnc_logic.lua')
+dofile(windower.addon_path .. 'debug/Debug.lua')
+dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
+dofile(windower.addon_path .. 'Logic/JobLogic.lua')
+dofile(windower.addon_path .. 'Logic/HealBuffLogic.lua')
+dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
+dofile(windower.addon_path .. 'Logic/RestLogic.lua')
 dofile(windower.addon_path .. 'settings.lua')
 -- FALLBACK STRUCTURES
 ws_sc_starter = ws_sc_starter or {}
@@ -19,6 +22,7 @@ ws_sc_closers = ws_sc_closers or {}
 needed_buffs = needed_buffs or {}
 food = food or nil
 spell_blacklist = spell_blacklist or {}
+magic_burst_blacklist = magic_burst_blacklist or {}
 haste_blacklist = haste_blacklist or {}
 dispel_whitelist = dispel_whitelist or {}
 subjob_abilities = subjob_abilities or {}
@@ -366,14 +370,17 @@ windower.register_event('addon command', function(...)
         print('//lazy save')
         print('//lazy show')
         print('//lazy debug on/off')
+        print('//lazy leader')
+        print('//lazy follower <player>')
+        print('//lazy autotarget on/off')
         print('//lazy target <name>')
+        print('//lazy fight')
         print('//lazy assist <player>')
         print('//lazy buffs on/off')
         print('//lazy cure on/off')
+        print('//lazy rest on/off')
         print('//lazy range <yalms>')
         print('//lazy retrust')
-        print('//lazy leader')
-        print('//lazy follower <player>')
         return
     end  
 
@@ -541,8 +548,37 @@ windower.register_event('addon command', function(...)
     -- TARGET  
     if command == 'target' then
         settings.target = args[2] or ''
+        if settings.target == '' then
+            windower.add_to_chat(2, '[Lazy] Named target cleared -- back to the whitelist.')
+        end
         return
-    end  
+    end
+    -- FIGHT
+    if command == 'fight' then
+        -- Grabs whatever mob is currently on <t> and locks Lazy onto
+        -- that exact name going forward -- same mechanism as //lazy
+        -- target, just auto-filled from your current target instead
+        -- of typed by hand.
+        local player = windower.ffxi.get_player()
+        local current = windower.ffxi.get_mob_by_target('t')
+
+        if not current or not current.valid_target or not current.hpp or current.hpp <= 0 then
+            windower.add_to_chat(167, '[Lazy] No valid target selected -- target the mob you want first, then //lazy fight.')
+            return
+        end
+        if player and current.id == player.id then
+            windower.add_to_chat(167, "[Lazy] That's you. Target a monster first.")
+            return
+        end
+        if Is_Party_Member(current.id) then
+            windower.add_to_chat(167, "[Lazy] That's a party member/trust, not a monster.")
+            return
+        end
+
+        settings.target = current.name
+        windower.add_to_chat(3, "[Lazy] Now locked onto '" .. current.name .. "' -- //lazy target (no name) clears it.")
+        return
+    end
     -- ASSIST  
     if command == 'assist' then
         settings.assist = args[2] or ''
@@ -685,90 +721,6 @@ function Engine()
                 isBusy = isBusy - 1
             end
         end
-        coroutine.sleep(1)
-    end
-end
--- TRUST RESUMMON
-tracked_trusts = {}
-trust_resummon_last = {}
-function Snapshot_Trusts()
-    tracked_trusts = {}
-    local party = windower.ffxi.get_party()
-    if not party then
-        return
-    end
-    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        if m
-            and m.name
-            and m.mob
-            and m.mob.is_npc
-        then
-            tracked_trusts[#tracked_trusts + 1] = m.name
-        end
-    end
-    if #tracked_trusts > 0 then
-        windower.add_to_chat(
-            2,
-            '[Lazy] Tracking trusts for resummon: ' ..
-            table.concat(tracked_trusts, ', ')
-        )
-    end
-end
-function Trust_Tick()
-    if #tracked_trusts == 0 then
-        return
-    end
-    if pending_cast
-        and os.clock() - pending_cast.sent_at > 10
-    then
-        pending_cast = nil
-    end
-    if isBusy > 0
-        or isCasting
-        or pending_cast
-    then
-        return
-    end
-    local party = windower.ffxi.get_party()
-    if not party then
-        return
-    end
-    local present = {}
-    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        if m
-            and m.name
-            and m.hp
-            and m.hp > 0
-        then
-            present[m.name] = true
-        end
-    end
-    for _, name in ipairs(tracked_trusts) do
-        if not present[name] then
-            local spell = res.spells:with('name', name)
-            if spell
-                and Cast_Spell_On(name, '<me>')
-            then
-                pending_cast = {
-                    store = trust_resummon_last,
-                    key = name,
-                    spell_id = spell.id,
-                    sent_at = os.clock(),
-                }
-                windower.add_to_chat(
-                    2,
-                    '[Lazy] Resummoning trust: ' .. name
-                )
-                return
-            end
-        end
-    end
-end
-function Trust_Monitor()
-    while Start_Engine do
-        pcall(Trust_Tick)
         coroutine.sleep(1)
     end
 end

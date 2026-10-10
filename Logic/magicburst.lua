@@ -20,7 +20,7 @@
 --   Start_Engine
 --   Action_Delay
 --   Is_Moving()
---   Is_Blacklisted()
+--   Is_Magic_Burst_Blacklisted()
 --   sc_active()
 --   sc_ready()
 --   sc_get_elements()   -- from skillchain.lua
@@ -99,8 +99,10 @@ function Try_Magic_Burst()
     if target.hpp <= 0 then
         return false
     end
-       -- Blacklist.
-    if Is_Blacklisted(target.name) then
+       -- Blacklist (magic-burst-specific -- separate from the general
+       -- debuff/dispel/settings.spell blacklist, since a mob can be
+       -- fine for one and dangerous for the other).
+    if Is_Magic_Burst_Blacklisted(target.name) then
         return false
     end
        -- There must be an active skillchain.
