@@ -1,5 +1,7 @@
 # Lazy
 
+PLEASE NOTE THIS IS A WIP PROJECT AND MIGHT OCCASIONALLY BREAK. 
+
 Simple helper for farming XP/CP/Trash items. So far includes:
 
   - Always Turn to face Target, even if Trust Tank pulls away from you
