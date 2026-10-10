@@ -1,87 +1,39 @@
-  ---
--- DNC JOB PROFILE
--- Loaded by Lazy.lua into JOB_PROFILES.DNC.
--- DNCQUEEN handles DNC-specific rotation logic.
-  -------------
+    
+-- DNC JOB PROFILE 
+--
+-- Dancer -- weaponskill skillchain settings, step/flourish/waltz
+-- rotation (see Try_DNC_Actions in Lazy.lua).
+--
+-- Loaded by Lazy.lua into JOB_PROFILES.DNC 
 
 JOB_PROFILES.DNC = {
-    auto_engage = true,
-    use_weaponskills = true,
-    haste_active = false,
 
-      
-    -- SELF BUFFS
-      
-    self_buffs = {},
+	auto_engage = true,
+	use_weaponskills = true,
 
-      
-    -- WEAPONSKILLS
-      
-    ws_sc_starter = {
-        "Rudra's Storm",
-        2000,
-    },
+	haste_active = false,
+	self_buffs = {},
 
-    ws_sc_closers = {
-        "Rudra's Storm",
-    },
+	ws_sc_starter = {
+		"Rudra's Storm",
+		2000,
+	},
 
-      
-    -- DNC ROTATION
-      
-    dnc_rotation = true,
+	ws_sc_closers = {
+		"Rudra's Storm",
+	},
 
-      
-    -- DNC JOB ABILITIES
-      
-    dnc_abilities = {
-        'Trance',
-        'Contradance',
-        'Saber Dance',
-        'Fan Dance',
-        'No Foot Rise',
-        'Presto',
-        'Grand Pas',
+	      ---------
+	-- STEP / FLOURISH / WALTZ ROTATION
+	--
+	-- Box Step until Finishing Move hits 5 stacks, then
+	-- Reverse Flourish (also fires right after any
+	-- weaponskill, even below 5 stacks). Emergency Curing
+	-- Waltz -- highest tier affordable on current MP --
+	-- takes priority over both any time HP drops to 50%.
+	      ---------
 
-        'Haste Samba',
+	dnc_rotation = true,
 
-        'Box Step',
-        'Reverse Flourish',
-        'Climactic Flourish',
-        'Violent Flourish',
-
-        'Curing Waltz',
-        'Curing Waltz II',
-        'Curing Waltz III',
-        'Curing Waltz IV',
-        'Curing Waltz V',
-    },
-
-      
-    -- SAMBA
-      
-    dnc_sambas = {
-        'Haste Samba',
-    },
-
-      
-    -- STEPS
-      
-    dnc_steps = {
-        'Box Step',
-    },
-
-      
-    -- FLOURISHES
-      
-    dnc_flourishes = {
-        'Reverse Flourish',
-        'Climactic Flourish',
-        'Violent Flourish',
-    },
-
-      
-    -- FOOD
-      
-    food = 'Soy Ramen',
+	food = 'Soy Ramen',
 }

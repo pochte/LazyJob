@@ -890,8 +890,10 @@ function Follow_Monitor()
                 -- runs off (e.g. hate switching to a ranged party
                 -- member) once combat is already locked in.
                 local distance = target.distance and math.sqrt(target.distance)
-                local stop_range = Stop_Range(target)
-                if distance and distance > stop_range then
+                -- Combat chase distance is deliberately fixed at 3 yalms:
+                -- keep following the locked target while farther away, and
+                -- stop following at 3 yalms or closer. Never retarget here.
+                if distance and distance > MELEE_ENGAGE_RANGE then
                     windower.ffxi.follow(target.index)
                 else
                     windower.ffxi.follow(0)
@@ -1087,14 +1089,11 @@ function Target_Monitor()
                     )
                     Clear_Combat_Target()
                 else
-                    -- Lock held, target alive, but FFXI never put us in
-                    -- combat. /attack on is only sent once (in
-                    -- Engage_Target) and gets silently ignored if we're
-                    -- mid-cast (an RDM is nearly always casting
-                    -- something) -- then nothing ever resent it, and we
-                    -- stood there holding the lock forever. Resend every
-                    -- couple of seconds while in range, and give up on
-                    -- the mob if it still hasn't engaged after 10s.
+                    -- Do not resend /attack on. If FFXI never entered
+                    -- combat, release only this pre-engage lock after a
+                    -- bounded wait so the targeting loop can recover.
+                    -- Once combat_started is true, this branch is never
+                    -- used: player.status is the authority for ending combat.
                     local now = os.clock()
                     local lock_age =
                         combat_lock_time
@@ -1102,32 +1101,12 @@ function Target_Monitor()
                         or 0
                     if lock_age > 10 then
                         Debug.Log(
-                            '>>> ENGAGE NEVER STARTED - GIVING UP <<< target=' ..
+                            '>>> ENGAGE NEVER STARTED - RELEASING PRE-ENGAGE LOCK <<< target=' ..
                             tostring(combat_locked_target_id)
                         )
                         unattackable_until[combat_locked_target_id] =
                             now + 15
                         Clear_Combat_Target()
-                    elseif lock_age >= 2
-                        and not isCasting
-                        and now - (engage_retry_time or 0) >= 2
-                    then
-                        local cur = windower.ffxi.get_mob_by_target('t')
-                        local dist =
-                            locked.distance
-                            and math.sqrt(locked.distance)
-                        if cur
-                            and cur.id == locked.id
-                            and dist
-                            and dist <= Stop_Range(locked) + 1
-                        then
-                            engage_retry_time = now
-                            Debug.Log(
-                                '>>> RESENDING /attack on <<< target=' ..
-                                tostring(locked.id)
-                            )
-                            windower.send_command('input /attack on')
-                        end
                     end
                 end
             end

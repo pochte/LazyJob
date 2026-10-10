@@ -17,20 +17,6 @@ Simple helper for farming XP/CP/Trash items. So far includes:
 * //lazy start
 * //lazy stop
 * //lazy reload
-* //lazy save
-* //lazy show
-* //lazy debug on|off
-* //lazy leader
-* //lazy follower <player>
-* //lazy autotarget on|off
-* //lazy target <name>
-* //lazy fight
-* //lazy assist <player>
-* //lazy buffs on|off
-* //lazy cure on|off
-* //lazy rest on|off
-* //lazy range <yalms>
-* //lazy retrust
 
 #### //lazy start
 Starts the actual helper
@@ -41,52 +27,8 @@ Stops the helper
 #### //lazy reload
 Reloads the options from the settings.xml
 
-#### //lazy save
-Saves the current settings for the current character.
-
-#### //lazy show
-Displays the current Lazy status, including main job, assist target,
-autotarget state, spell/WS settings, buffs, cure bot, rest, and current
-leader/follower mode.
-
-#### //lazy debug on|off
-Toggles verbose TargetLogic tracing (default: off). While on, every target
-pick, follow decision, and combat-lock state change gets written both to
-chat and to `debug/logs/TargetLogic_Debug.txt`, and outgoing attack packets
-get traced too. Run with no argument to print whether it's currently on or
-off. This is a troubleshooting tool, not something to leave on day to day
-— it's noisy.
-
-#### //lazy leader
-Switches Lazy into leader mode. Clears the assist target and enables
-autotarget. Lazy will select targets itself.
-
-#### //lazy follower "Player Name"
-Switches Lazy into follower mode. Sets the specified player as the assist
-target and disables autotarget. Lazy follows the assisted player's targets
-instead of selecting its own.
-
-Leader and follower are atomic mode switches: each command sets both the
-assist and autotarget states together, preventing a stale assist setting or
-autotarget state from putting Lazy into an unintended mode.
-
-#### //lazy autotarget on|off
-Enables or disables automatic target selection. This is the granular version
-of the leader/follower mode controls.
-
 #### //lazy target "Some Monster"
-Sets/changes the current named target. Single mob name only. Overrides the
-`targeting.monsters` whitelist entirely — Lazy will hunt this exact name
-regardless of whether it's on the whitelist. Run `//lazy target` with no
-name to clear it and go back to the whitelist.
-
-#### //lazy fight
-Locks Lazy onto whatever mob is currently on your `<t>`, by name — same
-effect as `//lazy target "Some Monster"`, but grabbed automatically from
-your current target instead of typed by hand. Target the monster yourself
-first, then run `//lazy fight`; clear it the same way as `//lazy target`.
-Refuses if you don't have a valid monster targeted (yourself, a party
-member, or a trust won't be accepted).
+Sets/Changes the current auto target monster, Single mob only for now
 
 #### //lazy assist "Player Name"
 Sets/changes who to assist. Independent of autotarget — works whether or not
@@ -117,23 +59,6 @@ then Cure II, under 400 tries Cure II/III/Cure, up through Cure VI past
 than getting stuck retrying one spell that's on cooldown. Also fires Auspice
 (or whatever's in that profile's `job_abilities`) the instant it's off cooldown.
 
-#### //lazy rest on|off
-Toggles automatic resting (default: on). When enabled, Lazy uses `/heal`
-when your MP drops below 500 and you are not currently engaged or under
-recent attack pressure. Resting pauses when you are hit, when a self-buff
-needs to be maintained, or when a skillchain magic-burst window is pending.
-Resting also stops automatically when you become engaged, die, zone, or
-disable the feature.
-
-If Lazy is hit while resting and the attacker is a valid, unclaimed target
-(or claimed by you), Lazy will target and engage that attacker.
-
-#### //lazy range <yalms>
-Sets (or, with no argument, prints) the origin radius — how far from your
-anchored origin point (set automatically on `//lazy start`, wherever you
-were standing) Lazy is willing to hunt or path to. Mobs outside this
-radius are ignored by autotarget/named-target alike.
-
 #### //lazy retrust
 Lazy snapshots which party slots are Trusts when you `//lazy start`, and
 resummons any of them that die for the rest of the session (player
@@ -145,42 +70,33 @@ up whatever you swapped in instead.
 ### Job profiles
 Lazy is main-job aware — it auto-detects your current main job and switches
 behavior profiles (`//lazy show` prints which one is active). Profiles live
-one-per-file in `Profiles/<JOB>.lua`, loaded automatically by `Lazy.lua`.
-
-All jobs with a file in `Profiles/` are done and ready to use — check that
-folder for the current list. Future jobs are to be added the same way, one
-file at a time. Any job without a profile yet falls back to `DEFAULT`.
+in the `JOB_PROFILES` table near the top of `Lazy.lua`, not `settings.lua`.
+Currently defined: `RDM` (buff maintenance, Haste II), `WHM` (cure bot,
+Auspice), `WAR` (Great Axe: Upheaval opener, Ukko's Fury closer, Hasso/
+Berserk/Blood Rage/Aggressor before swinging), and `THF` (Conspirator kept
+up, Feint + Sneak Attack + Trick Attack before every WS, Rudra's Storm). Unlisted
+jobs fall back to `DEFAULT`.
 
 A profile can override `ws_sc_starter`, `ws_sc_closers`, `needed_buffs`, and
 `food` — if it doesn't, those fall back to the plain values in
 `settings.lua`. So switching your main job in-game actually switches your
 whole WS/JA/food kit automatically for any job with a profile; jobs without
 one just keep using whatever's in `settings.lua`, same as before job
-profiles existed. Edit the relevant `Profiles/<JOB>.lua` file to tweak any
-of this, or add a new job's profile the same way.
+profiles existed. Edit `JOB_PROFILES` directly to tweak any of this, or add
+a new job's profile the same way.
 
 ### settings.xml
-This is autogenerated by `config.load`/`//lazy save` (per-character, under
-`data/settings.xml`) — you normally don't hand-edit it. Fields:
 ```xml
 <spell></spell>
-<spell_active>false</spell_active>
+<spell_active></spell_active>
 <weaponskill></weaponskill>
-<weaponskill_active>false</weaponskill_active>
+<weaponskill_active></weaponskill_active>
 <autotarget>false</autotarget>
-<target>Monster Name</target>
-<assist>Player Name</assist>
-<buffs_active>true</buffs_active>
-<cure_active>true</cure_active>
-<rest_active>true</rest_active>
+<target>Monster Name<target>
 ```
 * spell - Spell to cast, will cast whenever MP and recast time allows
-* spell_active - true/false enables/disables casting of the spell
+* spell_active - true/false enables/disables enables casting of the spell
 * weaponskill - weaponskill to use when over 1000TP
 * weaponskill_active - true/false enables/disables use of weaponskills
 * autotarget - true/false enables/disables automatic hunting of mobs in range
-* target - name of monster to hunt (see `//lazy target` / `//lazy fight`)
-* assist - player name to assist (see `//lazy assist` / `//lazy follower`)
-* buffs_active - true/false, `//lazy buffs`
-* cure_active - true/false, `//lazy cure`
-* rest_active - true/false, `//lazy rest`
+* target - name of monster to hunt
