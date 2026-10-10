@@ -3,7 +3,6 @@
 -- COMBAT RULE: once /attack on is sent and FFXI reports status == 1, combaowns the target. Don't reselect, don't resend /attack, don't watch
 -- target.hpp or stale mob-table data, and don't release the lock whileengaged. Player status is the only authority for ending combat.
 -- PRE-ENGAGE: a committed target can be followed before combat starts.
-
 -- ORIGIN / PATHING
 function Origin_Distance(x, y, z)
     if not origin_x then
@@ -450,29 +449,52 @@ function Find_Nearest_Party_Claimed_Target(party_ids)
     return candidates[1] and candidates[1].mob
 end
 -- PLAYER PET / LUOPAN FILTER
--- `is_pet` and `owner_id` are not real fields on Windower's mob table --
--- checking them was a silent no-op, always false, for every mob. The
--- documented, reliable signal is `pet_index` on a PC's own mob entry: it
--- points at their active pet's index in the mob array (Luopan, avatar,
--- automaton, wyvern, charmed pet -- any of them, for any party member,
--- not just yourself). A mob is a player's pet if its index matches
--- anyone in the party's pet_index.
+-- Windower exposes a player's active pet through pet_index on that
+-- player's mob entry. Compare pet_index to the candidate mob's INDEX
+-- (not its server ID). This is ownership-based, not name/job-based, so
+-- it covers Luopans, wyverns, avatars/spirits, BST pets, automatons,
+-- and other active pets when Windower exposes their owner relationship.
+--
+-- Scan the main party and both alliance parties. Alliance members matter
+-- because their pets can appear in the same mob array and must not become
+-- autotarget candidates either.
 function Is_Player_Pet(mob)
-    if not mob or not mob.index then return false end
+    if not mob or not mob.index then
+        return false
+    end
     local party = windower.ffxi.get_party()
-    if not party then return false end
-    for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-        local m = party[key]
-        if m and m.mob and m.mob.pet_index
-            and m.mob.pet_index > 0
-            and m.mob.pet_index == mob.index
-        then
-            return true
+    if not party then
+        return false
+    end
+    local owner_slots = {
+        'p0', 'p1', 'p2', 'p3', 'p4', 'p5',
+        'a10', 'a11', 'a12', 'a13', 'a14', 'a15',
+        'a20', 'a21', 'a22', 'a23', 'a24', 'a25',
+    }
+    for _, key in ipairs(owner_slots) do
+        local member = party[key]
+        if member then
+            -- `member.mob` is normally populated for visible members.
+            -- Fall back to the live mob table when only the member ID
+            -- is available (for example, after party data refreshes).
+            local owner_mob = member.mob
+            if not owner_mob or not owner_mob.pet_index then
+                local owner_id = (owner_mob and owner_mob.id) or member.id
+                if owner_id then
+                    local live_owner_mob = windower.ffxi.get_mob_by_id(owner_id)
+                    if live_owner_mob and live_owner_mob.pet_index then
+                        owner_mob = live_owner_mob
+                    end
+                end
+            end
+            local pet_index = owner_mob and owner_mob.pet_index
+            if pet_index and pet_index > 0 and pet_index == mob.index then
+                return true
+            end
         end
     end
     return false
 end
-
 -- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
     if not mob or Is_Player_Pet(mob) or not mob.valid_target or not mob.hpp or mob.hpp <= 0 then return false end
@@ -552,6 +574,15 @@ function Select_Target(mob)
     then
         return false
     end
+    -- Safety net: no caller may deliberately select a player-owned pet.
+    if Is_Player_Pet(mob) then
+        Debug.Target('SELECT BLOCKED - PLAYER PET/LUPON', mob)
+        if pending_target_id == mob.id then
+            pending_target_id = nil
+            pending_target_time = 0
+        end
+        return false
+    end
     if combat_locked_target_id then
         if combat_locked_target_id == mob.id then
             return true
@@ -607,13 +638,21 @@ function Select_Target(mob)
 end
 confirm_fail_count = confirm_fail_count or {}
 local CONFIRM_FAIL_LIMIT = 2 -- consecutive timeouts before giving up on this mob
-
 function Confirm_Target()
     if not pending_target_id then
         return nil
     end
     local target =
         windower.ffxi.get_mob_by_target('t')
+    if target and Is_Player_Pet(target) then
+        Debug.Target('TARGET CONFIRM REJECTED - PLAYER PET/LUPON', target)
+        pending_target_id = nil
+        pending_target_time = 0
+        if managed_target_id == target.id then
+            managed_target_id = nil
+        end
+        return nil
+    end
     if target
         and target.id == pending_target_id
     then
@@ -890,10 +929,8 @@ function Follow_Monitor()
                 -- runs off (e.g. hate switching to a ranged party
                 -- member) once combat is already locked in.
                 local distance = target.distance and math.sqrt(target.distance)
-                -- Combat chase distance is deliberately fixed at 3 yalms:
-                -- keep following the locked target while farther away, and
-                -- stop following at 3 yalms or closer. Never retarget here.
-                if distance and distance > MELEE_ENGAGE_RANGE then
+                local stop_range = Stop_Range(target)
+                if distance and distance > stop_range then
                     windower.ffxi.follow(target.index)
                 else
                     windower.ffxi.follow(0)
@@ -1076,7 +1113,10 @@ function Target_Monitor()
                     windower.ffxi.get_mob_by_id(
                         combat_locked_target_id
                     )
-                if not locked
+                if locked and Is_Player_Pet(locked) then
+                    Debug.Target('PRE-ENGAGE LOCK IS PLAYER PET/LUPON - CLEARING', locked)
+                    Clear_Combat_Target()
+                elseif not locked
                     or not locked.valid_target
                     or not locked.hpp
                     or locked.hpp <= 0
@@ -1089,11 +1129,14 @@ function Target_Monitor()
                     )
                     Clear_Combat_Target()
                 else
-                    -- Do not resend /attack on. If FFXI never entered
-                    -- combat, release only this pre-engage lock after a
-                    -- bounded wait so the targeting loop can recover.
-                    -- Once combat_started is true, this branch is never
-                    -- used: player.status is the authority for ending combat.
+                    -- Lock held, target alive, but FFXI never put us in
+                    -- combat. /attack on is only sent once (in
+                    -- Engage_Target) and gets silently ignored if we're
+                    -- mid-cast (an RDM is nearly always casting
+                    -- something) -- then nothing ever resent it, and we
+                    -- stood there holding the lock forever. Resend every
+                    -- couple of seconds while in range, and give up on
+                    -- the mob if it still hasn't engaged after 10s.
                     local now = os.clock()
                     local lock_age =
                         combat_lock_time
@@ -1101,12 +1144,32 @@ function Target_Monitor()
                         or 0
                     if lock_age > 10 then
                         Debug.Log(
-                            '>>> ENGAGE NEVER STARTED - RELEASING PRE-ENGAGE LOCK <<< target=' ..
+                            '>>> ENGAGE NEVER STARTED - GIVING UP <<< target=' ..
                             tostring(combat_locked_target_id)
                         )
                         unattackable_until[combat_locked_target_id] =
                             now + 15
                         Clear_Combat_Target()
+                    elseif lock_age >= 2
+                        and not isCasting
+                        and now - (engage_retry_time or 0) >= 2
+                    then
+                        local cur = windower.ffxi.get_mob_by_target('t')
+                        local dist =
+                            locked.distance
+                            and math.sqrt(locked.distance)
+                        if cur
+                            and cur.id == locked.id
+                            and dist
+                            and dist <= Stop_Range(locked) + 1
+                        then
+                            engage_retry_time = now
+                            Debug.Log(
+                                '>>> RESENDING /attack on <<< target=' ..
+                                tostring(locked.id)
+                            )
+                            windower.send_command('input /attack on')
+                        end
                     end
                 end
             end
@@ -1117,6 +1180,7 @@ function Target_Monitor()
         then
             if target
                 and target.id
+                and not Is_Player_Pet(target)
             then
                 managed_target_id =
                     target.id
@@ -1174,7 +1238,12 @@ function Targeting()
             elseif player.status == 1 then
                 local target =
                     windower.ffxi.get_mob_by_target('t')
-                if target
+                if target and Is_Player_Pet(target) then
+                    Debug.Target('CURRENT <t> IS PLAYER PET/LUPON - STOPPING ATTACK', target)
+                    windower.send_command('input /attack off')
+                    Clear_Combat_Target()
+                    windower.ffxi.follow(0)
+                elseif target
                     and target.id
                 then
                     managed_target_id =
@@ -1255,7 +1324,18 @@ function Targeting()
             elseif managed_target_id then
                 local target =
                     windower.ffxi.get_mob_by_target('t')
-                if not target
+                local managed_mob =
+                    windower.ffxi.get_mob_by_id(managed_target_id)
+                if managed_mob and Is_Player_Pet(managed_mob) then
+                    Debug.Target('MANAGED TARGET IS PLAYER PET/LUPON - DROPPING', managed_mob)
+                    managed_target_id = nil
+                    pending_target_id = nil
+                    pending_target_time = 0
+                    engage_sent_target_id = nil
+                    combat_lock_time = nil
+                    combat_started = false
+                    windower.ffxi.follow(0)
+                elseif not target
                     or target.id ~= managed_target_id
                 then
                     local mob =
