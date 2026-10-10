@@ -10,14 +10,15 @@ JOB_PROFILES.RDM = {
     },
     self_buffs = {
         { name = 'Haste II', interval = 23 },
+        { name = 'Refresh III', interval = 8 },
         { name = 'Temper II', interval = 5 },
         { name = 'Gain-STR', interval = 15 },
         { name = 'Enfire II', interval = 20 },
     },
     debuffs = {
-        { name = 'Distract III' },
-        { name = 'Inundation' },
-        { name = 'Dia III' },
+        { name = 'Distract III', once_per_mob = true },
+        { name = 'Inundation', once_per_mob = true },
+        { name = 'Dia III', once_per_mob = true },
     },
     party_buffs = {
         {

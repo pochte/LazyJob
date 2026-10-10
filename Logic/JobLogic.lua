@@ -81,6 +81,21 @@ function SC_Monitor()
         coroutine.sleep(0.5)
     end
 end
+-- NUKES: BURST ONLY
+-- magic_burst_active (settings.lua) was defined but never read. For a
+-- job whose profile does magic_burst, settings.spell now only fires
+-- into an already-open skillchain window -- never as a free nuke --
+-- and never into a window on a mob on magic_burst_blacklist (the plain
+-- spell_blacklist this cast checks is the debuff list, not the burst
+-- one). Set magic_burst_active = false to go back to free casting.
+function Spell_Allowed_Now(target)
+    if not (magic_burst_active and active_profile and active_profile.magic_burst) then
+        return true
+    end
+    if not target or not sc_active or not sc_ready then return false end
+    if Is_Magic_Burst_Blacklisted(target.name) then return false end
+    return (sc_active(target.id) and sc_ready(target.id)) and true or false
+end
 function Combat()
     local player = windower.ffxi.get_player()
     if not player then return end
@@ -185,6 +200,7 @@ function Combat()
         if settings.spell_active
             and Can_Cast_Spell(settings.spell)
             and not Is_Blacklisted(target.name)
+            and Spell_Allowed_Now(target)
         then
             Cast_Spell(settings.spell)
         end
@@ -192,6 +208,7 @@ function Combat()
         and settings.spell_active
         and Can_Cast_Spell(settings.spell)
         and not Is_Blacklisted(target.name)
+        and Spell_Allowed_Now(target)
     then
         Cast_Spell(settings.spell)
     end

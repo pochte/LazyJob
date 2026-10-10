@@ -543,6 +543,8 @@ function Clear_Combat_Target()
     combat_started = false
 end
 -- EXACT TARGET SELECTION
+last_select_sent = last_select_sent or 0
+engage_retry_time = engage_retry_time or 0
 function Select_Target(mob)
     if not mob
         or not mob.id
@@ -565,6 +567,22 @@ function Select_Target(mob)
     if not player then
         return false
     end
+    -- Follow_Monitor (0.2s) and Target_Monitor (0.1s) both call this
+    -- whenever <t> doesn't match yet. It used to restart the pending
+    -- timer on every call, so Confirm_Target could never time out --
+    -- a wrong same-named mob winning /target would retry forever.
+    -- If we're already selecting this mob, keep the original timer
+    -- and only re-send the command about once a second.
+    local now = os.clock()
+    if pending_target_id == mob.id then
+        if now - (last_select_sent or 0) < 1 then
+            return true
+        end
+    else
+        pending_target_id = mob.id
+        pending_target_time = now
+    end
+    last_select_sent = now
     Debug.Target(
         'SELECT',
         mob
@@ -572,8 +590,6 @@ function Select_Target(mob)
     Debug.State(
         'BEFORE SELECT'
     )
-    pending_target_id = mob.id
-    pending_target_time = os.clock()
     -- /target by name is the real, reliable way to set <t> -- it's
     -- what every other targeting call site in this file already uses
     -- (//lazy target, //lazy fight, Target_Monitor, Engagement_Sync).
@@ -1070,6 +1086,49 @@ function Target_Monitor()
                         )
                     )
                     Clear_Combat_Target()
+                else
+                    -- Lock held, target alive, but FFXI never put us in
+                    -- combat. /attack on is only sent once (in
+                    -- Engage_Target) and gets silently ignored if we're
+                    -- mid-cast (an RDM is nearly always casting
+                    -- something) -- then nothing ever resent it, and we
+                    -- stood there holding the lock forever. Resend every
+                    -- couple of seconds while in range, and give up on
+                    -- the mob if it still hasn't engaged after 10s.
+                    local now = os.clock()
+                    local lock_age =
+                        combat_lock_time
+                        and (now - combat_lock_time)
+                        or 0
+                    if lock_age > 10 then
+                        Debug.Log(
+                            '>>> ENGAGE NEVER STARTED - GIVING UP <<< target=' ..
+                            tostring(combat_locked_target_id)
+                        )
+                        unattackable_until[combat_locked_target_id] =
+                            now + 15
+                        Clear_Combat_Target()
+                    elseif lock_age >= 2
+                        and not isCasting
+                        and now - (engage_retry_time or 0) >= 2
+                    then
+                        local cur = windower.ffxi.get_mob_by_target('t')
+                        local dist =
+                            locked.distance
+                            and math.sqrt(locked.distance)
+                        if cur
+                            and cur.id == locked.id
+                            and dist
+                            and dist <= Stop_Range(locked) + 1
+                        then
+                            engage_retry_time = now
+                            Debug.Log(
+                                '>>> RESENDING /attack on <<< target=' ..
+                                tostring(locked.id)
+                            )
+                            windower.send_command('input /attack on')
+                        end
+                    end
                 end
             end
             coroutine.sleep(0.1)
@@ -1256,6 +1315,22 @@ function Targeting()
                     -- and let the next tick pick something else.
                     Debug.Target(
                         'MANAGED TARGET CLAIMED BY SOMEONE ELSE',
+                        target
+                    )
+                    managed_target_id = nil
+                    pending_target_id = nil
+                    pending_target_time = 0
+                    engage_sent_target_id = nil
+                    combat_lock_time = nil
+                    combat_started = false
+                    windower.ffxi.follow(0)
+                elseif Is_Unattackable(target.id) then
+                    -- Benched (rejected / couldn't be selected). The
+                    -- managed branch kept this id and Engage_Target just
+                    -- returned false every tick -- standing there until
+                    -- the bench expired. Drop it and pick another.
+                    Debug.Target(
+                        'MANAGED TARGET BENCHED - DROPPING',
                         target
                     )
                     managed_target_id = nil

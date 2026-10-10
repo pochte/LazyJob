@@ -116,6 +116,24 @@ function Cure_Monitor()
 end
 
 -- buff logic
+-- Once-per-mob debuffs are keyed by mob id ('mob:<id>:<spell>') in
+-- debuff_last_cast and never expire. Keep that table from growing all
+-- session: past a cap, drop every once-per-mob entry except the
+-- current target's.
+local ONCE_KEY_CAP = 150
+local function Prune_Once_Keys(keep_id)
+    local count = 0
+    for k in pairs(debuff_last_cast) do
+        if type(k) == 'string' and k:sub(1, 4) == 'mob:' then count = count + 1 end
+    end
+    if count <= ONCE_KEY_CAP then return end
+    local keep = 'mob:' .. tostring(keep_id) .. ':'
+    for k in pairs(debuff_last_cast) do
+        if type(k) == 'string' and k:sub(1, 4) == 'mob:' and k:sub(1, #keep) ~= keep then
+            debuff_last_cast[k] = nil
+        end
+    end
+end
 function Buff_Tick()
     if not settings.buffs_active or not active_profile then return end
     if pending_cast and os.clock() - pending_cast.sent_at > 10 then
@@ -143,6 +161,7 @@ function Buff_Tick()
                 local require_no_pet
                 local use_ability_before
                 local use_ability_after
+                local once_per_mob
                 if type(debuff) == 'string' then
                     names = {debuff}
                     interval = 1
@@ -154,16 +173,27 @@ function Buff_Tick()
                     require_no_pet = debuff.require_no_pet
                     use_ability_before = debuff.use_ability_before
                     use_ability_after = debuff.use_ability_after
+                    once_per_mob = debuff.once_per_mob
                 end
                 if names and names[1] then
                     local key = names[1]
+                    if once_per_mob then
+                        -- Cast once per mob, ever: keyed by mob id, no timer.
+                        key = 'mob:' .. tostring(target.id) .. ':' .. names[1]
+                    end
                     local last = debuff_last_cast[key]
                     local cooldown = interval * 60
                     local pet_ok = true
                     if require_no_pet and pet then
                         pet_ok = false
                     end
-                    if pet_ok and (not last or now - last >= cooldown) then
+                    local due
+                    if once_per_mob then
+                        due = (last == nil)
+                    else
+                        due = (not last or now - last >= cooldown)
+                    end
+                    if pet_ok and due then
                         if use_ability_before and Can_Cast_Ability(use_ability_before) then
                             Cast_Ability(use_ability_before)
                             return
@@ -178,6 +208,7 @@ function Buff_Tick()
                                     spell_id = spell.id,
                                     sent_at = now,
                                 }
+                                if once_per_mob then Prune_Once_Keys(target.id) end
                                 if use_ability_after then
                                     Schedule_Follow_Up(use_ability_after, require_no_pet)
                                 end
@@ -187,6 +218,7 @@ function Buff_Tick()
                             local ability = res.job_abilities:with('name', name)
                             if ability and Cast_Ability_On(name, target_spec) then
                                 debuff_last_cast[key] = now
+                                if once_per_mob then Prune_Once_Keys(target.id) end
                                 if use_ability_after then
                                     local follow_up = use_ability_after
                                     coroutine.schedule(function()
