@@ -1,13 +1,4 @@
 -- RESTLOGIC
--- Idle MP resting (/heal), with interrupts for incoming threat,
--- a party member needing the cure bot, or an open skillchain window
--- for a magic-burst job. Loaded by Lazy.lua via dofile.
---
--- Globals shared with Lazy.lua/JobLogic.lua/TargetLogic.lua
--- (is_resting, last_damage_taken_time, last_damage_source_id,
--- active_profile, buffactive, sc_active, current_job, settings,
--- Start_Engine, Safe_Tick, Party_Member_In_Range, Select_Target)
--- are intentionally not local.
 local REST_MP_THRESHOLD = 500
 local REST_THREAT_WINDOW = 10
 local REST_PARTY_HP_THRESHOLD = 60

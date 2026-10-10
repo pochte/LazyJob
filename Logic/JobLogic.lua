@@ -1,5 +1,4 @@
 -- JOBLOGIC
--- Combat execution, job actions, buffs, healing, resting, and WS/SC logic.
 local last_tick_error = {}
 function Safe_Tick(name, fn)
     local ok, err = pcall(fn)
@@ -51,20 +50,34 @@ function TurnToTarget()
 end
 local function SC_Tick()
     local player = windower.ffxi.get_player()
-    if player and player.status == 1 and isBusy < 1 and not isCasting and player.vitals.tp >= 1000 then
+    if player
+        and player.status == 1
+        and isBusy < 1
+        and not isCasting
+        and player.vitals.tp >= 1000
+    then
         local target = windower.ffxi.get_mob_by_target('t')
-        if target and sc_ready and sc_ready(target.id) and active_profile and active_profile.use_weaponskills ~= false then
+        if target
+            and sc_ready
+            and sc_ready(target.id)
+            and active_profile
+            and active_profile.use_weaponskills ~= false
+        then
             local options = sc_get_ws(target.id) or {}
             local fired = false
             for _, ws in ipairs(options) do
                 if fired then break end
                 for _, closer in ipairs(Get_WS_Closers() or {}) do
                     if ws == closer then
-                        if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then
+                        if current_job == 'DNC'
+                            and Try_DNC_Pre_WS_Flourish()
+                        then
                             fired = true
                             break
                         end
-                        windower.send_command('input /ws "' .. closer .. '" <t>')
+                        windower.send_command(
+                            'input /ws "' .. closer .. '" <t>'
+                        )
                         isBusy = Action_Delay
                         dnc_flourish_pending = true
                         fired = true
@@ -93,7 +106,8 @@ function Combat()
     else
         engaged_since = nil
     end
-    if active_profile and active_profile.provoke_if_stuck
+    if active_profile
+        and active_profile.provoke_if_stuck
         and player.status == 1
         and target
         and engaged_since
@@ -106,7 +120,9 @@ function Combat()
     end
     local magic_burst_ok = active_profile and active_profile.magic_burst
     if magic_burst_ok and active_profile.magic_burst_requires_buff then
-        magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff] and true or false
+        magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff]
+            and true
+            or false
     end
     if magic_burst_ok then
         if Try_Magic_Burst and Try_Magic_Burst() then return end
@@ -118,7 +134,10 @@ function Combat()
             return
         end
     end
-    if active_profile and active_profile.dnc_rotation and current_job == 'DNC' then
+    if active_profile
+        and active_profile.dnc_rotation
+        and current_job == 'DNC'
+    then
         if Try_DNC_Actions() then return end
     end
     if target
@@ -132,8 +151,12 @@ function Combat()
         and active_profile
         and active_profile.use_weaponskills ~= false
     then
-        if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then return end
-        windower.send_command('input /ws "' .. starter[1] .. '" <t>')
+        if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then
+            return
+        end
+        windower.send_command(
+            'input /ws "' .. starter[1] .. '" <t>'
+        )
         isBusy = Action_Delay
         dnc_flourish_pending = true
         return
@@ -144,19 +167,28 @@ function Combat()
         return
     end
     lockon_done = false
-    if player.vitals.tp >= 400 and target and target.distance and math.sqrt(target.distance) <= 3 then
+    if player.vitals.tp >= 400
+        and target
+        and target.distance
+        and math.sqrt(target.distance) <= 3
+    then
         local recasts = windower.ffxi.get_ability_recasts()
         for _, ability_name in ipairs(Get_Needed_Buffs() or {}) do
             if not buffactive[ability_name] then
                 if ability_name == 'Food' then
                     local food_item = Get_Food()
                     if food_item then
-                        windower.send_command('input /item "' .. food_item .. '" <me>')
+                        windower.send_command(
+                            'input /item "' .. food_item .. '" <me>'
+                        )
                         isBusy = Action_Delay
                         return
                     end
                 else
-                    local ability = res.job_abilities:with('name', ability_name)
+                    local ability = res.job_abilities:with(
+                        'name',
+                        ability_name
+                    )
                     if ability and recasts[ability.recast_id] == 0 then
                         Cast_Ability(ability_name)
                         return
@@ -175,8 +207,14 @@ function Combat()
             and active_profile
             and active_profile.use_weaponskills ~= false
         then
-            if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then return end
-            windower.send_command('input /ws "' .. starter[1] .. '" <t>')
+            if current_job == 'DNC'
+                and Try_DNC_Pre_WS_Flourish()
+            then
+                return
+            end
+            windower.send_command(
+                'input /ws "' .. starter[1] .. '" <t>'
+            )
             isBusy = Action_Delay
             dnc_flourish_pending = true
             return
@@ -224,7 +262,7 @@ function Is_Dispel_Whitelisted(name)
     end
     return false
 end
--- Unlearned spells would otherwise report "castable" (recast 0, enough MP) and stall every fallback list. Trusts are exempt from the check.
+-- Not learned spells logic
 local function Spell_Known(spell)
     if spell.type == 'Trust' then return true end
     local known = windower.ffxi.get_spells()
@@ -260,7 +298,9 @@ function Cast_Spell(spell_name)
     if recasts[spell.id] ~= 0 or isCasting or isBusy > 0 then
         return false
     end
-    windower.send_command('input /ma "' .. spell_name .. '" <t>')
+    windower.send_command(
+        'input /ma "' .. spell_name .. '" <t>'
+    )
     isBusy = Action_Delay
     return true
 end
@@ -279,31 +319,39 @@ function Cast_Spell_On(spell_name, target)
     then
         return false
     end
-    windower.send_command('input /ma "' .. spell_name .. '" ' .. target)
+    windower.send_command(
+        'input /ma "' .. spell_name .. '" ' .. target
+    )
     isBusy = Action_Delay
     return true
 end
 -- Self-targeted job ability.
 function Cast_Ability(ability_name)
     if not Can_Cast_Ability(ability_name) then return false end
-    windower.send_command('input /ja "' .. ability_name .. '" <me>')
+    windower.send_command(
+        'input /ja "' .. ability_name .. '" <me>'
+    )
     isBusy = Action_Delay
     return true
 end
 -- Targeted job ability.
 function Cast_Ability_On(ability_name, target)
     if not Can_Cast_Ability(ability_name) then return false end
-    windower.send_command('input /ja "' .. ability_name .. '" ' .. target)
+    windower.send_command(
+        'input /ja "' .. ability_name .. '" ' .. target
+    )
     isBusy = Action_Delay
     return true
 end
--- Follow-up job ability after a debuff SPELL (e.g. Geo-Poison -> Radial Arcana).
+-- Follow-up job ability after a debuff SPELL
+-- (e.g. Geo-Poison -> Radial Arcana).
 local function Schedule_Follow_Up(ability_name, wait_for_pet)
     coroutine.schedule(function()
         local deadline = os.clock() + 15
         coroutine.sleep(2.5)
         while os.clock() < deadline do
-            local pet_ok = (not wait_for_pet) or windower.ffxi.get_mob_by_target('pet')
+            local pet_ok = (not wait_for_pet)
+                or windower.ffxi.get_mob_by_target('pet')
             if pet_ok and not isCasting and Can_Cast_Ability(ability_name) then
                 Cast_Ability(ability_name)
                 return
@@ -311,151 +359,4 @@ local function Schedule_Follow_Up(ability_name, wait_for_pet)
             coroutine.sleep(0.5)
         end
     end, 0)
-end
--- REST
-local REST_MP_THRESHOLD = 500
-local REST_THREAT_WINDOW = 10
-local REST_PARTY_HP_THRESHOLD = 60
-local REST_PARTY_MAX_RANGE = 30
-local REST_CURE_RANGE = 20
-local rest_started_at = 0
--- Only jobs that actually run on a meaningful MP pool rest at all.
--- DNC's MP is too small/situational to be worth kneeling for,
--- and every pure-melee job has none.
-local REST_ELIGIBLE_JOBS = {
-    WHM = true,
-    RDM = true,
-    BLM = true,
-    GEO = true,
-    SCH = true,
-    SMN = true,
-}
-local function Being_Hit()
-    return last_damage_taken_time
-        and (os.clock() - last_damage_taken_time) <= REST_THREAT_WINDOW
-end
--- Someone else in the party is hurt badly enough to stop resting.
--- Up to 30y counts because the Cure Bot can move closer.
--- Beyond 30y is intentionally ignored.
-local function Party_Needs_Rest_Intervention()
-    local party = windower.ffxi.get_party()
-    if not party then return false end
-    for _, key in ipairs({'p1','p2','p3','p4','p5'}) do
-        local member = party[key]
-        if member
-            and member.hp
-            and member.hp > 0
-            and member.hpp
-            and member.hpp < REST_PARTY_HP_THRESHOLD
-            and Party_Member_In_Range(member, REST_PARTY_MAX_RANGE)
-        then
-            return true
-        end
-    end
-    return false
-end
-local function Magic_Burst_Needed()
-    if not active_profile or not active_profile.magic_burst then
-        return false
-    end
-    local target = windower.ffxi.get_mob_by_target('t')
-    if not target
-        or not target.id
-        or not target.hpp
-        or target.hpp <= 0
-    then
-        return false
-    end
-    if active_profile.magic_burst_requires_buff
-        and not buffactive[active_profile.magic_burst_requires_buff]
-    then
-        return false
-    end
-    -- An active skillchain window means the MB job should wake up.
-    -- Follow/combat logic is responsible for getting into range.
-    return sc_active and sc_active(target.id) or false
-end
-local function Rest_Tick()
-    local player = windower.ffxi.get_player()
-    -- Anything that stands us up invalidates the resting flag.
-    -- Grace period prevents a slow server acknowledgement after /heal
-    -- from immediately flipping the state back off.
-    if is_resting
-        and player
-        and player.status ~= 33
-        and (os.clock() - rest_started_at) > 4
-    then
-        is_resting = false
-    end
-    local idle_and_alive = player
-        and player.status ~= 1
-        and player.vitals
-        and player.vitals.hpp
-        and player.vitals.hpp > 0
-    local threat = Being_Hit()
-    local party_needs_help = Party_Needs_Rest_Intervention()
-    local magic_burst_needed = Magic_Burst_Needed()
-    -- INTERRUPT REST WHEN THERE IS ACTUALLY SOMETHING TO DO
-    if idle_and_alive
-        and is_resting
-        and (threat or party_needs_help or magic_burst_needed)
-    then
-        windower.send_command('input /heal off')
-        is_resting = false
-        return
-    end
-    -- BEING ATTACKED WHILE IDLE
-    if idle_and_alive
-        and threat
-        and last_damage_source_id
-    then
-        local current = windower.ffxi.get_mob_by_target('t')
-        local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
-        if attacker
-            and attacker.valid_target
-            and attacker.hpp
-            and attacker.hpp > 0
-            and (attacker.claim_id == 0 or attacker.claim_id == player.id)
-            and (not current or current.id ~= attacker.id)
-        then
-            windower.add_to_chat(
-                167,
-                '[Lazy] Being hit by ' .. attacker.name .. ' -- engaging.'
-            )
-            Select_Target(attacker)
-            return
-        end
-    end
-    -- ACTUAL RESTING
-    if idle_and_alive
-        and settings.rest_active
-        and REST_ELIGIBLE_JOBS[current_job]
-    then
-        local mp = player.vitals.mp or 0
-        local mpp = player.vitals.mpp or 0
-        local mp_full = mp >= REST_MP_THRESHOLD or mpp >= 100
-        if is_resting then
-            if mp_full then
-                windower.send_command('input /heal off')
-                is_resting = false
-            end
-        elseif not threat
-            and not party_needs_help
-            and not magic_burst_needed
-            and not mp_full
-        then
-            windower.send_command('input /heal on')
-            is_resting = true
-            rest_started_at = os.clock()
-        end
-    elseif is_resting then
-        windower.send_command('input /heal off')
-        is_resting = false
-    end
-end
-function Rest_Monitor()
-    while Start_Engine do
-        Safe_Tick('Rest_Tick', Rest_Tick)
-        coroutine.sleep(2)
-    end
 end

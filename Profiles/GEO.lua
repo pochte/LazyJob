@@ -1,19 +1,12 @@
-    
 -- GEO JOB PROFILE 
-
 JOB_PROFILES.GEO = {
-
        -- MELEE / ENGAGE SETTINGS
-   
     auto_engage = false,
     use_weaponskills = false,
-
        -- SELF BUFFS & ABILITIES
-   
     self_buffs = {
         { name = 'Indi-Fury', interval = 3 },
     },
-
     self_abilities = {
         -- Restores MP using Luopan when player MP drops below 50%
         { 
@@ -23,7 +16,6 @@ JOB_PROFILES.GEO = {
             max_mp_percent = 50, 
             min_pet_hpp = 20 
         },
-
         -- Grants Luopan temporary invulnerability when HP drops below 30%
         { 
             name = 'Dematerialize', 
@@ -31,7 +23,6 @@ JOB_PROFILES.GEO = {
             require_pet = true, 
             max_pet_hpp = 30 
         },
-
         -- Restores Luopan HP when it drops below 40%
         { 
             name = 'Life Cycle', 
@@ -40,9 +31,7 @@ JOB_PROFILES.GEO = {
             max_pet_hpp = 40 
         },
     },
-
        -- ENTRUST BUFFS
-   
     entrust_buffs = {
         {
             ability  = 'Entrust',
@@ -51,9 +40,7 @@ JOB_PROFILES.GEO = {
             interval = 1,
         },
     },
-
        -- TARGET DEBUFFS
-   
     debuffs = {
         { 
             name = 'Geo-Frailty', 
@@ -64,11 +51,8 @@ JOB_PROFILES.GEO = {
             use_ability_after  = 'Ecliptic Attrition', -- Pops Ecliptic Attrition right after Luopan is summoned
         },
     },
-
        -- MAGIC BURST
-   
     magic_burst = true,
-
     burst_spells = {
         Fire     = { 'Fire V', 'Fire IV', 'Fire III' },
         Blizzard = { 'Blizzard V', 'Blizzard IV', 'Blizzard III' },
@@ -78,11 +62,8 @@ JOB_PROFILES.GEO = {
         Water    = { 'Water V', 'Water IV', 'Water III' },
         Darkness = { 'Impact' },
     },
-
        -- CURE BOT
-   
     cure_bot_active = true,
-
     cure_tiers = {
         {
             min_missing = 100,

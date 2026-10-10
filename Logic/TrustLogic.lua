@@ -1,11 +1,7 @@
 -- TRUSTLOGIC
--- Trust auto-resummon: tracks which trusts are in the party and
--- recasts them if they drop (death, despawn, etc).
+-- Tracks and resummons trusts that leave the party.
 -- Loaded by Lazy.lua via dofile.
---
--- Globals shared with Lazy.lua/JobLogic.lua (pending_cast, isBusy,
--- isCasting, Start_Engine, Cast_Spell_On) are intentionally not
--- local.
+-- Shared globals are intentionally not local.
 -- TRUST RESUMMON
 tracked_trusts = {}
 trust_resummon_last = {}

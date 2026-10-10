@@ -1,15 +1,5 @@
 -- HEALBUFFLOGIC
--- Healing (cure bot) and buff maintenance (self/party buffs,
--- debuffs, dispel, haste/refresh). Loaded by Lazy.lua via dofile.
---
--- Globals shared with Lazy.lua/JobLogic.lua (settings, active_profile,
--- buffactive, pending_cast, isBusy, isCasting, current_job, the
--- *_last_cast tables, Can_Cast_Ability, Cast_Ability, Cast_Spell_On,
--- Is_Blacklisted, Is_Haste_Blacklisted, Is_Dispel_Whitelisted,
--- Ensure_Debuff_Target, Party_Member_In_Range) are intentionally not
--- local.
-
--- healing logic
+-- Healing, buffs, debuffs, dispel, haste, and refresh.
 function Party_Has_WHM()
     local party = windower.ffxi.get_party()
     if not party then return false end
@@ -52,7 +42,7 @@ function Cure_Bot_Tick()
     local party = windower.ffxi.get_party()
     if not party then return end
     local worst_member, worst_hpp = nil, 999
-    -- We can attempt to reach anyone up to 30y away. <=20y: cure immediately.
+    -- Follow Logic
     -- 20-30y: move/follow closer, then cure.
     -- >30y: ignore them.
     for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
@@ -114,7 +104,6 @@ function Cure_Monitor()
         coroutine.sleep(0.5)
     end
 end
-
 -- buff logic
 function Buff_Tick()
     if not settings.buffs_active or not active_profile then return end
@@ -126,7 +115,7 @@ function Buff_Tick()
     if not player then return end
     local now = os.clock()
     Update_Job_Profile()
-    -- 1. DEBUFF LOGIC
+    -- 1. DEBUFF LOGIC :Once per mob
     if active_profile.debuffs then
         Ensure_Debuff_Target()
         local target = windower.ffxi.get_mob_by_target('t')
@@ -136,57 +125,63 @@ function Buff_Tick()
             and target.hpp > 0
             and not Is_Blacklisted(target.name)
         then
+            local mob_id = target.id or target.index or target.name
             for _, debuff in ipairs(active_profile.debuffs) do
                 local names
-                local interval
                 local target_spec
                 local require_no_pet
                 local use_ability_before
                 local use_ability_after
                 if type(debuff) == 'string' then
                     names = {debuff}
-                    interval = 1
                     target_spec = '<t>'
                 elseif type(debuff) == 'table' then
-                    names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
-                    interval = debuff.interval or 1
+                    names = type(debuff.name) == 'table'
+                        and debuff.name or {debuff.name}
                     target_spec = debuff.target or '<t>'
                     require_no_pet = debuff.require_no_pet
                     use_ability_before = debuff.use_ability_before
                     use_ability_after = debuff.use_ability_after
                 end
                 if names and names[1] then
-                    local key = names[1]
-                    local last = debuff_last_cast[key]
-                    local cooldown = interval * 60
-                    local pet_ok = true
-                    if require_no_pet and pet then
-                        pet_ok = false
-                    end
-                    if pet_ok and (not last or now - last >= cooldown) then
-                        if use_ability_before and Can_Cast_Ability(use_ability_before) then
+                    local spell_key = tostring(mob_id)
+                        .. ':' .. tostring(names[1])
+                    local before_key = 'before:' .. spell_key
+                    local pet_ok = not (require_no_pet and pet)
+                    if pet_ok and not debuff_last_cast[spell_key] then
+                        -- Run any setup ability once for this mob.
+                        if use_ability_before
+                            and not debuff_last_cast[before_key]
+                            and Can_Cast_Ability(use_ability_before)
+                        then
                             Cast_Ability(use_ability_before)
+                            debuff_last_cast[before_key] = os.clock()
                             return
                         end
                         local fired = false
                         for _, name in ipairs(names) do
                             local spell = res.spells:with('name', name)
                             if spell and Cast_Spell_On(name, target_spec) then
+                                local cast_time = os.clock()
+                                debuff_last_cast[spell_key] = cast_time
                                 pending_cast = {
                                     store = debuff_last_cast,
-                                    key = key,
+                                    key = spell_key,
                                     spell_id = spell.id,
-                                    sent_at = now,
+                                    sent_at = cast_time,
                                 }
                                 if use_ability_after then
-                                    Schedule_Follow_Up(use_ability_after, require_no_pet)
+                                    Schedule_Follow_Up(
+                                        use_ability_after,
+                                        require_no_pet
+                                    )
                                 end
                                 fired = true
                                 break
                             end
                             local ability = res.job_abilities:with('name', name)
                             if ability and Cast_Ability_On(name, target_spec) then
-                                debuff_last_cast[key] = now
+                                debuff_last_cast[spell_key] = os.clock()
                                 if use_ability_after then
                                     local follow_up = use_ability_after
                                     coroutine.schedule(function()
