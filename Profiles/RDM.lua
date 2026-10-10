@@ -1,9 +1,12 @@
 JOB_PROFILES.RDM = {
     auto_engage = true,
     use_weaponskills = true,
-    weaponskills = {
-        primary_ws = 'Savage Blade',
-        min_tp = 1000,
+    ws_sc_starter = {
+        'Savage Blade',
+        1000,
+    },
+    ws_sc_closers = {
+        'Savage Blade',
     },
     self_buffs = {
         { name = 'Haste II', interval = 23 },
