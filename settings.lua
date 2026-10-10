@@ -1,4 +1,4 @@
--- LAZY — GLOBAL CONFIGURATION
+-- Settings.Lua — GLOBAL CONFIGURATION
 -- Shared configuration and fallback values.
 --
 -- Job-specific rotations, buffs, food, and combat behaviour

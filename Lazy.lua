@@ -1,3 +1,4 @@
+--Lazy Lua--
 require('chat')
 require('logger')
 require('tables')
