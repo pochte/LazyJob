@@ -1,157 +1,69 @@
--- Lazy addon — user configuration
--- Edit this file to customize weapon skills, buffs, food, and targeting.
+-- LAZY — GLOBAL CONFIGURATION
+-- Shared configuration and fallback values.
+--
+-- Job-specific rotations, buffs, food, and combat behaviour
+-- belong in profiles/*.lua and are handled by JobLogic.lua.
+--
 -- Reload in-game with: //lazy reload
-
- 
--- WEAPON SKILLS 
-
--- Weapon skill used to open a skillchain.
--- Format: {ws_name, minimum_tp}
-
-ws_sc_starter = {}
-
-
--- Weapon skills eligible to close a skillchain.
--- Checked against what the SC system says is available;
--- first matching WS fires.
-
+-- WEAPON SKILL FALLBACKS
+-- Used when the active job profile does not define these.
+ws_sc_starter = {'Savage Blade',}
 ws_sc_closers = {
-	'Savage Blade',
+    'Savage Blade',
 }
-
- 
--- MAGIC BURST 
-
--- When true, settings.spell only fires into an already-open
--- skillchain window for magic burst damage.
-
-magic_burst_active = true
-
- 
--- SPELL BLACKLIST 
-
--- Mobs Lazy should NEVER cast settings.spell on.
--- Names are matched case-insensitively.
-
+-- SPELL BLACKLIST
+-- Monster names Lazy must never cast its configured offensive
+-- spell on. Names are matched case-insensitively.
 spell_blacklist = {
-	'Locus Colibri',
+    'Locus Colibri',
 }
-
- 
--- HASTE BLACKLIST 
-
--- Players who never receive Haste II from Lazy, no matter what.
--- Names are matched case-insensitively.
+-- HASTE BLACKLIST
+-- Players who must never receive Haste II from Lazy.
 -- Self-haste is unaffected.
--- This only filters party/ALL_PLAYERS haste target lists.
-
 haste_blacklist = {
-	'Ulmia',
-	'Joachim',
-	'Yoran-Oran',
-	'Sylvie',
-	'Kuru-Moru',
-	
+    'Ulmia',
+    'Joachim',
+    'Yoran-Oran',
+    'Sylvie',
+    'Kuru-Moru',
 }
-
- 
--- TARGETING 
-
+-- TARGETING
+-- Shared monster whitelist and targeting rules.
+--
+-- Player-owned pets and GEO Luopans must be excluded by
+-- TargetLogic.lua using ownership checks. Do not exclude
+-- pets as a general category; DRG and SMN behaviour must
+-- remain unaffected.
 targeting = {
-
-	      ---------
-	-- MONSTERS LAZY IS ALLOWED TO TARGET
-	      ---------
-
-	monsters = {
-		'Colibri',
-		'Bat',
-		'Apex Eft'
-	},
-
-
-	      ---------
-	-- TARGETING RULES
-	      ---------
-
-	-- Only target mobs that nobody has claimed.
-	only_unclaimed = true,
-
-	-- Never target dead mobs.
-	only_alive = true,
-
-	-- Only target mobs inside the origin radius.
-	within_origin = true,
+    -- Monster names Lazy is allowed to target.
+    monsters = {
+        'Colibri',
+        'Bat',
+        'Apex Eft',
+    },
+    -- Only target mobs nobody has claimed.
+    only_unclaimed = true,
+    -- Never target dead mobs.
+    only_alive = true,
+    -- Restrict target selection to the configured origin radius.
+    within_origin = true,
 }
-
- 
--- NEEDED BUFFS 
-
--- Buffs to maintain before weapon skilling.
--- Applied in order — first missing and off cooldown wins.
---
--- Use 'Food' as a special entry to trigger food use.
---
--- Job-specific profiles can override this list with their own
--- needed_buffs settings.
-
+-- DEFAULT BUFF / FOOD FALLBACKS
+-- Used when the active job profile does not provide these.
 needed_buffs = {}
-
- 
--- SUBJOB ABILITIES 
-
--- Master switch. Lazy.lua checks this before ever looking at
--- subjob_abilities below -- if this is false (or missing, which
--- is the same as false/nil in Lua), NOTHING here fires, for ANY
--- job, regardless of subjob. This was accidentally dropped from
--- a previous version of this file, which is why Haste Samba
--- stopped firing even with everything else configured correctly.
-
-haste_samba_active = true
-
--- Job abilities granted by a specific SUBJOB.
---
--- These are completely independent of the main job profile.
--- If the current subjob matches one of the entries below,
--- those abilities are added to the self-ability rotation.
---
--- Therefore:
---
---     THF/DNC -> Haste Samba
---     COR/DNC -> Haste Samba
---     RDM/DNC -> Haste Samba
---     WAR/DNC -> Haste Samba
---     WHM/DNC -> Haste Samba
---     etc.
---
--- Any job /DNC gets Haste Samba automatically.
---
--- Interval is measured in minutes.
-
-subjob_abilities = {
-
-	DNC = {
-
-		{
-			name = 'Haste Samba',
-			interval = 2,
-		},
-
-	},
-}
-
- 
--- SELF ABILITY DEBUG 
-
--- Set to true only when debugging subjob/self abilities.
--- When true, Lazy prints ability detection information
--- to chat every buff tick.
-
-debug_self_abilities = false
-
- 
--- FOOD 
-
--- Food item used when 'Food' is included in needed_buffs.
-
 food = 'Red Curry Bun'
+-- SUBJOB ABILITIES
+-- Abilities granted by a specific subjob, independent of
+-- the main-job profile.
+--
+-- Any job subbing DNC can use Haste Samba.
+-- Intervals are measured in minutes.
+haste_samba_active = true
+subjob_abilities = {
+    DNC = {
+        {
+            name = 'Haste Samba',
+            interval = 2,
+        },
+    },
+}

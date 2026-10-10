@@ -8,7 +8,6 @@
 -- active_profile, buffactive, sc_active, current_job, settings,
 -- Start_Engine, Safe_Tick, Party_Member_In_Range, Select_Target)
 -- are intentionally not local.
-
 local REST_MP_THRESHOLD = 500
 local REST_THREAT_WINDOW = 10
 local REST_PARTY_HP_THRESHOLD = 60
@@ -16,8 +15,7 @@ local REST_PARTY_MAX_RANGE = 30
 local REST_CURE_RANGE = 20
 local rest_started_at = 0
 -- Only jobs that actually run on a meaningful MP pool rest at all.
--- DNC's MP is too small/situational to be worth kneeling for,
--- and every pure-melee job has none.
+-- RDM remains eligible, except when playing RDM/NIN.
 local REST_ELIGIBLE_JOBS = {
     WHM = true,
     RDM = true,
@@ -123,9 +121,12 @@ local function Rest_Tick()
         end
     end
     -- ACTUAL RESTING
+    -- RDM/NIN does not rest; other eligible job/subjob combinations can.
+    local should_rest_for_job = REST_ELIGIBLE_JOBS[current_job]
+        and not (current_job == 'RDM' and player.sub_job == 'NIN')
     if idle_and_alive
         and settings.rest_active
-        and REST_ELIGIBLE_JOBS[current_job]
+        and should_rest_for_job
     then
         local mp = player.vitals.mp or 0
         local mpp = player.vitals.mpp or 0
