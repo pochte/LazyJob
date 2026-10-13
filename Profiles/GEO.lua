@@ -31,12 +31,20 @@ JOB_PROFILES.GEO = {
             max_pet_hpp = 40 
         },
     },
-       -- ENTRUST BUFFS
+    -- ENTRUST BUFFS
+    -- Indi-Refresh on a mage player if one's in range; otherwise Indi-Frailty on any player.
     entrust_buffs = {
         {
             ability  = 'Entrust',
             spell    = 'Indi-Refresh',
-            targets  = { jobs = { 'RDM', 'WHM', 'SCH' } },
+            targets  = { jobs = { 'RDM', 'WHM', 'SCH', 'BLM', 'SMN', } },
+            interval = 1,
+        },
+        {
+            ability  = 'Entrust',
+            spell    = 'Indi-Frailty',
+            targets  = { players_only = true },
+            fallback = true,  -- only when no mage target exists
             interval = 1,
         },
     },

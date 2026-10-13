@@ -1,17 +1,10 @@
--- HEALBUFFLOGIC
--- Healing, buffs, debuffs, dispel, haste, and refresh.
+-- NOTE: Get_Party_Member_Job() lives in TrustLogic.lua (party info tracker).
 function Party_Has_WHM()
     local party = windower.ffxi.get_party()
     if not party then return false end
     for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
-        local m = party[key]
-        if m then
-            if m.main_job == 'WHM' or m.job == 'WHM' then
-                return true
-            end
-            if m.mob and m.mob.main_job == 'WHM' then
-                return true
-            end
+        if Get_Party_Member_Job(party[key]) == 'WHM' then
+            return true
         end
     end
     return false
@@ -103,6 +96,105 @@ function Cure_Monitor()
         Safe_Tick('Cure_Bot_Tick', Cure_Bot_Tick)
         coroutine.sleep(0.5)
     end
+end
+-- ENTRUST HELPERS
+entrust_last_cast   = entrust_last_cast   or {}
+entrust_last_target = entrust_last_target or {}
+entrust_warn_last   = entrust_warn_last   or {}
+ENTRUST_BUBBLE_DURATION = 300 -- seconds; a player holds ONE Indi, so don't overwrite another entrust spell's target within this window
+local function Member_Job(m)
+    return Get_Party_Member_Job(m)
+end
+local function Entrust_Candidate_Ok(key, m, me_zone)
+    return key ~= 'p0'                     -- Entrust is never self-cast
+        and m
+        and m.name
+        and m.hp and m.hp > 0
+        and m.mob
+        and m.mob.id
+        and m.zone == me_zone
+        and not m.mob.is_npc               -- players only, no trusts
+        and m.mob.distance
+        and math.sqrt(m.mob.distance) <= 20
+end
+-- Names already holding a *different* entrust spell from us.
+local function Entrust_Claimed(this_spell, now)
+    local claimed = {}
+    for spell, rec in pairs(entrust_last_target) do
+        if spell ~= this_spell and rec and now - rec.at < ENTRUST_BUBBLE_DURATION then
+            claimed[rec.name] = true
+        end
+    end
+    return claimed
+end
+-- Supports targets = { jobs = {...} } (priority order) and
+-- targets = { players_only = true, exclude_self = true } (any in-range player).
+function Find_Entrust_Target(eb, party, me_zone, now)
+    local t = eb.targets
+    if type(t) ~= 'table' or not party then return nil end
+    local keys = {'p0','p1','p2','p3','p4','p5'}
+    local claimed = Entrust_Claimed(eb.spell, now)
+    if t.jobs then
+        for _, job in ipairs(t.jobs) do
+            for _, key in ipairs(keys) do
+                local m = party[key]
+                if Entrust_Candidate_Ok(key, m, me_zone)
+                    and Member_Job(m) == job
+                    and not claimed[m.name]
+                then
+                    return m.name
+                end
+            end
+        end
+        return nil
+    end
+    if t.players_only then
+        for _, key in ipairs(keys) do
+            local m = party[key]
+            if Entrust_Candidate_Ok(key, m, me_zone) and not claimed[m.name] then
+                return m.name
+            end
+        end
+    end
+    return nil
+end
+-- Set false once Entrust is working.
+ENTRUST_DEBUG = (ENTRUST_DEBUG == nil) and true or ENTRUST_DEBUG
+local entrust_dbg_last = {}
+function Entrust_Debug(key, msg)
+    if not ENTRUST_DEBUG then return end
+    local t = os.clock()
+    if entrust_dbg_last[key] and t - entrust_dbg_last[key] < 5 then return end
+    entrust_dbg_last[key] = t
+    windower.add_to_chat(207, '[Lazy][Entrust] ' .. msg)
+end
+-- One line describing every party slot, for the debug output.
+function Entrust_Party_Summary(party, me_zone)
+    if not party then return 'no party table' end
+    local out = {}
+    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+        local m = party[key]
+        if m and m.name then
+            local d = m.mob and m.mob.distance and math.floor(math.sqrt(m.mob.distance)) or '?'
+            out[#out + 1] = string.format('%s=%s(%s,%sy%s%s)', key, m.name,
+                tostring(Get_Party_Member_Job(m) or 'job?'), tostring(d),
+                (m.mob and m.mob.is_npc) and ',npc' or '',
+                (m.zone ~= me_zone) and ',other zone' or '')
+        end
+    end
+    return #out > 0 and table.concat(out, ' ') or 'empty'
+end
+-- buffactive may be missing/stale in a standalone addon; fall back to scanning player.buffs.
+function Has_Buff_Named(name)
+    if buffactive and buffactive[name] then return true end
+    local pl = windower.ffxi.get_player()
+    if pl and pl.buffs then
+        for _, id in ipairs(pl.buffs) do
+            local b = res.buffs[id]
+            if b and b.en == name then return true end
+        end
+    end
+    return false
 end
 -- buff logic
 function Buff_Tick()
@@ -274,7 +366,7 @@ function Buff_Tick()
         local key = names[1]
         local interval = (buff.interval or 20) * 60
         local last = self_buff_last_cast[key]
-        local buff_ok = true
+        local buff_ok = not Has_Buff_Named('Entrust')
         if buff.require_buff and not buffactive[buff.require_buff] then
             buff_ok = false
         end
@@ -337,51 +429,42 @@ function Buff_Tick()
     if active_profile.entrust_buffs then
         local me_zone = windower.ffxi.get_info().zone
         local party = windower.ffxi.get_party()
+        local earlier_target_exists = false  -- an earlier (higher priority) entry has a valid target
         for _, eb in ipairs(active_profile.entrust_buffs) do
             local interval = (eb.interval or 1) * 60
             local last = entrust_last_cast[eb.spell]
-            if not last or now - last >= interval then
-                local chosen_target = nil
-                if type(eb.targets) == 'table' and eb.targets.jobs and party then
-                    for _, job in ipairs(eb.targets.jobs) do
-                        if chosen_target then break end
-                        for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
-                            local m = party[key]
-                            if m
-                                and m.name
-                                and m.mob
-                                and m.mob.id
-                                and m.zone == me_zone
-                                and not m.mob.is_npc
-                                and key ~= 'p0'
-                                and m.main_job == job
-                                and m.mob.distance
-                                and math.sqrt(m.mob.distance) <= 20
-                            then
-                                chosen_target = m.name
-                                break
-                            end
-                        end
+            local candidate = Find_Entrust_Target(eb, party, me_zone, now)
+            local skip = eb.fallback and earlier_target_exists
+            if candidate and not eb.fallback then earlier_target_exists = true end
+            local ent = eb.ability or 'Entrust'
+            if skip then
+                Entrust_Debug(eb.spell .. ':skip', eb.spell .. ' skipped (fallback; a mage target exists)')
+            elseif last and now - last < interval then
+                Entrust_Debug(eb.spell .. ':cd', eb.spell .. ' on interval, ' .. math.ceil(interval - (now - last)) .. 's left')
+            elseif not candidate then
+                Entrust_Debug(eb.spell .. ':nt', 'no valid target in range for ' .. tostring(eb.spell) .. ' | party: ' .. Entrust_Party_Summary(party, me_zone))
+            else
+                local armed = Has_Buff_Named(ent)
+                if not armed then
+                    local ok = Can_Cast_Ability(ent)
+                    Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok))
+                    if ok then
+                        Cast_Ability(ent)
+                        return
                     end
-                end
-                if chosen_target then
-                    local ent = eb.ability or 'Entrust'
-                    if not buffactive[ent] then
-                        if Can_Cast_Ability(ent) then
-                            Cast_Ability(ent)
-                            return
-                        end
-                    else
-                        local spell = res.spells:with('name', eb.spell)
-                        if spell and Cast_Spell_On(eb.spell, chosen_target) then
-                            pending_cast = {
-                                store = entrust_last_cast,
-                                key = eb.spell,
-                                spell_id = spell.id,
-                                sent_at = now,
-                            }
-                            return
-                        end
+                else
+                    local spell = res.spells:with('name', eb.spell)
+                    local ok = spell and Cast_Spell_On(eb.spell, candidate)
+                    Entrust_Debug(eb.spell .. ':sp', ent .. ' active; Cast_Spell_On(' .. eb.spell .. ', ' .. candidate .. ')=' .. tostring(ok and true or false) .. (spell and '' or ' (spell not in res)'))
+                    if ok then
+                        entrust_last_target[eb.spell] = { name = candidate, at = now }
+                        pending_cast = {
+                            store = entrust_last_cast,
+                            key = eb.spell,
+                            spell_id = spell.id,
+                            sent_at = now,
+                        }
+                        return
                     end
                 end
             end
@@ -430,7 +513,7 @@ function Buff_Tick()
                             and math.sqrt(m.mob.distance) <= range
                         then
                             for _, job in ipairs(pb.targets.jobs) do
-                                if m.main_job == job then
+                                if Get_Party_Member_Job(m) == job then
                                     targets[#targets + 1] = m.name
                                     break
                                 end

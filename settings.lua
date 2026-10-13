@@ -17,6 +17,14 @@ ws_sc_closers = {
 spell_blacklist = {
     'Locus Colibri',
 }
+-- DISPEL WHITELIST
+-- Mobs Lazy is allowed to safety-cast Dispel (or Finale, for BRD) on.
+-- Matched as a case-insensitive substring against the target's name, so
+-- one entry like 'Beetle' covers every named Beetle mob.
+dispel_whitelist = {
+    'Beetle',
+    'Crab',
+}
 -- HASTE BLACKLIST
 -- Players who must never receive Haste II from Lazy.
 -- Self-haste is unaffected.
@@ -25,7 +33,38 @@ haste_blacklist = {
     'Joachim',
     'Yoran-Oran',
     'Sylvie',
-    'Kuru-Moru',
+    'Koru-Moru',
+}
+-- PARTY JOIN (TrustLogic.lua)
+-- Someone sends the bot a tell containing exactly the phrase below:
+-- new pulls pause, they get invited, the party level-syncs to the lowest
+-- level / master level, and trusts are resummoned minus however many
+-- slots the new player needs.
+party_join = {
+    enabled = true,
+    phrase = 'chicken nuggets',
+    -- {} = anyone who knows the phrase can use it. Or limit it:
+    -- allowed_senders = { 'Faceroll', 'Norrec' },
+    allowed_senders = {},
+    invite_timeout = 60,   -- seconds to wait for them to accept the invite
+    fight_timeout = 120,   -- seconds to let a fight in progress finish first
+    level_sync = true,
+}
+-- Trust names exactly as the party list shows them, and their jobs.
+-- (Game data has no job for trusts, so this is hardcoded.)
+trust_jobs = {
+    ['Ulmia'] = 'BRD',
+    ['Joachim'] = 'BRD',
+    ['Koru-Moru'] = 'RDM',
+    ['Yoran-Oran'] = 'WHM',
+    ['Sylvie'] = 'GEO',
+    ['Qultada'] = 'COR',
+}
+-- Who gets dropped when the new player's job matches none of the trusts.
+-- One group per step; inside a group, whichever is out is dropped first.
+trust_sacrifice_order = {
+    { 'Ulmia', 'Joachim' },
+    { 'Qultada' },
 }
 -- TARGETING
 -- Shared monster whitelist and targeting rules.

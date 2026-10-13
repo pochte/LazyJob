@@ -1,6 +1,4 @@
--- LAZY DEBUG
--- Centralized debug logging, packet tracing, and the /attack
--- safety gate. Debug output is OFF by default.
+-- LAZY DEBUG :: Off by default
 Debug = Debug or {}
 Debug.enabled = Debug.enabled or false
 Debug._log_handle = Debug._log_handle or nil
@@ -113,6 +111,21 @@ if not Debug._events_installed then
         end
     end)
     Debug._events_installed = true
+end
+if not Debug._077_installed then
+    -- Party permission / level sync packet. Logs the raw bytes so a sync
+    -- done from the menu can be compared with the one Lazy injects.
+    windower.register_event('outgoing chunk', function(id, data)
+        if not Debug.enabled or id ~= 0x077 then
+            return
+        end
+        local hex = {}
+        for i = 1, #data do
+            hex[#hex + 1] = string.format('%02X', data:byte(i))
+        end
+        Debug.Log('>>> OUTGOING 0x077 (group change) <<< ' .. #data .. ' bytes: ' .. table.concat(hex, ' '))
+    end)
+    Debug._077_installed = true
 end
 if not Debug._attack_wrapper_installed then
     Debug._original_send_command = windower.send_command
