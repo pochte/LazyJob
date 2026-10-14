@@ -20,6 +20,12 @@ JOB_PROFILES.SCH = {
 		{ max_missing = math.huge, spells = { 'Cure IV', 'Cure III' } },
 	},
 
+	-- FREE NUKE (//lazy freenuke). Tier IV and lower are cast on the target
+	-- between bursts; V and VI are saved for magic burst.
+	free_nuke = true,
+	free_nuke_max_tier = 4,
+	free_nuke_weather = true, -- failsafe: cast the matching Storm if the weather is wrong
+
 	-- MAGIC BURST
 	burst_spells = {
 		Fire     = { 'Fire V', 'Fire IV', 'Fire III' },

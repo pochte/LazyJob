@@ -8,11 +8,113 @@ function Safe_Tick(name, fn)
     end
 end
 -- PROFILE HELPERS
+-- WEAPONSKILL MODE (//lazy chainmode, //lazy openmode)
+--   chain: fire the ordered ws_sc_chain (up to 5 steps) when one exists.
+--   open:  opener + closers only: ws_sc_starter / ws_sc_closers, where the
+--          closer is whichever one continues the open skillchain.
+ws_mode = ws_mode or 'chain'
+-- Ordered skillchain, up to 5 weaponskills: ws_sc_chain = { 'WS1', 'WS2',
+-- 'WS3', 'WS4', 'WS5' }. An entry is a name, or { name, min_tp } (default
+-- 1000). Entry 1 opens the chain.
+MAX_WS_CHAIN = 5
+local function Raw_WS_Chain()
+    local raw = (active_profile and active_profile.ws_sc_chain) or ws_sc_chain
+    if type(raw) ~= 'table' or #raw == 0 then
+        return nil
+    end
+    local chain = {}
+    for i = 1, math.min(#raw, MAX_WS_CHAIN) do
+        local entry = raw[i]
+        local name, tp
+        if type(entry) == 'table' then
+            name, tp = entry[1], entry[2]
+        else
+            name = entry
+        end
+        if name then
+            chain[#chain + 1] = { name, tp or 1000 }
+        end
+    end
+    return #chain > 0 and chain or nil
+end
+-- { {name, min_tp}, ... } while in chain mode and a chain exists, else nil.
+function Get_WS_Chain()
+    if ws_mode == 'open' then
+        return nil
+    end
+    return Raw_WS_Chain()
+end
+-- A profile that only defines a chain (no ws_sc_starter / ws_sc_closers of
+-- its own) still has to do something in open mode: use the chain's first
+-- two entries as the opener and closer.
+local function Open_Pair_From_Chain()
+    local p = active_profile
+    if p and p.ws_sc_chain and not p.ws_sc_starter and not p.ws_sc_closers then
+        return Raw_WS_Chain()
+    end
+    return nil
+end
+-- { name, min_tp } for the opening weaponskill.
 function Get_WS_Starter()
-    return active_profile and active_profile.ws_sc_starter or ws_sc_starter
+    local chain = Get_WS_Chain() or Open_Pair_From_Chain()
+    if chain then
+        return chain[1]
+    end
+    local starter = active_profile and active_profile.ws_sc_starter or ws_sc_starter
+    if starter and starter[1] and starter[2] == nil then
+        return { starter[1], 1000 }
+    end
+    return starter
 end
 function Get_WS_Closers()
+    local pair = Open_Pair_From_Chain()
+    if pair then
+        return { (pair[2] or pair[1])[1] }
+    end
     return active_profile and active_profile.ws_sc_closers or ws_sc_closers
+end
+local function WS_Names(list)
+    local names = {}
+    for _, e in ipairs(list or {}) do
+        names[#names + 1] = type(e) == 'table' and e[1] or tostring(e)
+    end
+    return table.concat(names, ' > ')
+end
+function Set_WS_Mode(mode)
+    if mode == 'chain' then
+        local chain = Raw_WS_Chain()
+        if not chain then
+            windower.add_to_chat(
+                167,
+                '[Lazy] No ws_sc_chain for this profile, staying in open mode. ' ..
+                'Add one to the profile (or settings.lua) first.'
+            )
+            return
+        end
+        ws_mode = 'chain'
+        windower.add_to_chat(
+            2,
+            '[Lazy] WS mode: CHAIN, ' .. #chain .. ' steps: ' .. WS_Names(chain)
+        )
+        return
+    end
+    ws_mode = 'open'
+    local starter = Get_WS_Starter()
+    windower.add_to_chat(
+        2,
+        '[Lazy] WS mode: OPEN, opener: ' .. tostring(starter and starter[1]) ..
+        ', closers: ' .. WS_Names(Get_WS_Closers())
+    )
+end
+function Get_WS_Mode_Text()
+    local chain = Get_WS_Chain()
+    if chain then
+        return 'chain (' .. #chain .. ' steps: ' .. WS_Names(chain) .. ')'
+    end
+    local starter = Get_WS_Starter()
+    return 'open (opener ' .. tostring(starter and starter[1]) ..
+        ', closers ' .. WS_Names(Get_WS_Closers()) .. ')' ..
+        ((ws_mode == 'chain') and ' [no chain defined]' or '')
 end
 function Get_Needed_Buffs()
     return active_profile and active_profile.needed_buffs or needed_buffs

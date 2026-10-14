@@ -126,7 +126,9 @@ local function Get_Living_Trusts()
     end
     return living
 end
---Summon Names
+-- The trust SPELL for a party-list name. Most trusts share the name, but
+-- the UC ones don't ("Yoran-Oran" in the party, "Yoran-Oran (UC)" as the
+-- spell), so fall back to the spell's party_name field.
 local function Trust_Spell(party_name)
     local spell = res.spells:with('name', party_name)
     if spell and spell.type == 'Trust' then
@@ -318,41 +320,41 @@ local function Count_Trusts_In_Party()
     end
     return n
 end
--- Lowest level, then lowest master level, among real players. Returns the
--- member to sync to and whether anyone is actually higher than them.
--- Non-master-breakers count as master level 0.
+-- Lowest master level among real players. ONLY characters with a master
+-- level of 1 or higher count: syncing to a non-master would drop everyone
+-- below what they can fight at. Returns the member to sync to, whether
+-- anyone counted is higher than them, a reason when there is no answer,
+-- and the master level synced to.
 local function Pick_Sync_Target()
     local me = windower.ffxi.get_player()
     if not me then
         return nil, false, 'no player'
     end
-    local lowest, lowest_key, highest_key = nil, nil, nil
+    local lowest, lowest_ml, highest_ml = nil, nil, nil
     for _, m in ipairs(Party_Players()) do
-        local level, ml
+        local ml
         if m.name == me.name then
-            level = me.main_job_level
             ml = me.master_level or my_master_level
         else
             local info = m.mob and party_member_info[m.mob.id]
-            if info then
-                level, ml = info.level, info.master_level
+            ml = info and info.master_level
+        end
+        if ml == nil then
+            return nil, false, 'master level of ' .. m.name .. ' not known yet'
+        end
+        if ml >= 1 then
+            if not lowest_ml or ml < lowest_ml then
+                lowest, lowest_ml = m, ml
             end
-        end
-        if not level then
-            return nil, false, 'level of ' .. m.name .. ' not known yet'
-        end
-        local key = level * 1000 + (ml or 0)
-        if not lowest_key or key < lowest_key then
-            lowest, lowest_key = m, key
-        end
-        if not highest_key or key > highest_key then
-            highest_key = key
+            if not highest_ml or ml > highest_ml then
+                highest_ml = ml
+            end
         end
     end
     if not lowest then
-        return nil, false, 'no players in party'
+        return nil, false, 'nobody in the party has a master level'
     end
-    return lowest, highest_key > lowest_key, nil
+    return lowest, highest_ml > lowest_ml, nil, lowest_ml
 end
 -- Which trusts to keep. A trust whose job matches the joiner's goes
 -- first, then trust_sacrifice_order, then whoever was summoned last.
@@ -481,14 +483,12 @@ local function Party_Join_Run(name, run_id)
                     coroutine.sleep(1)
                 end
             end
-            if my_master_level == nil and not (windower.ffxi.get_player() or {}).master_level then
-                Say('Own master level unknown, assuming 0.')
-            end
-            local target, need, why = Pick_Sync_Target()
+            local target, need, why, target_ml = Pick_Sync_Target()
             if not target then
                 Say('No level sync: ' .. tostring(why) .. '.')
             elseif not need then
-                Say('Everyone is the same level, no sync needed.')
+                Say('No level sync needed: ' .. target.name .. ' ML' ..
+                    tostring(target_ml) .. ' is the lowest and nobody counted is higher.')
             else
                 Set_Level_Sync(target.name)
                 local synced = false

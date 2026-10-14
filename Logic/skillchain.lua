@@ -246,6 +246,30 @@ function sc_ready(target_id)
     end
     return now >= reson.delay
 end
+-- GET CURRENT SKILLCHAIN STEP
+--
+-- 1 = only the opening weaponskill has landed, 2 = first skillchain
+-- formed, and so on (counts every weaponskill on the target, whoever used
+-- it). nil when there is no open window. The chain closes itself after
+-- step 5.
+function sc_get_step(target_id)
+    local reson =
+        resonating[target_id]
+    if not reson then
+        return nil
+    end
+    if reson.closed then
+        resonating[target_id] =
+            nil
+        return nil
+    end
+    if os.clock() > reson.times then
+        resonating[target_id] =
+            nil
+        return nil
+    end
+    return reson.step
+end
 -- GET CURRENT SKILLCHAIN PROPERTY
 --
 -- Examples:

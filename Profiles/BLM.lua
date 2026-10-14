@@ -10,6 +10,12 @@ JOB_PROFILES.BLM = {
 	haste_active = false,
 	self_buffs = {},
 
+	-- FREE NUKE (//lazy freenuke). Tier IV and lower are cast on the target
+	-- between bursts; V and VI are saved for magic burst.
+	free_nuke = true,
+	free_nuke_max_tier = 4,
+	free_nuke_weather = true, -- failsafe: cast the matching Storm if the weather is wrong
+
 	-- MAGIC BURST
 	magic_burst = true,
 	burst_spells = {

@@ -911,6 +911,10 @@ function Reset_Damage_Tracking()
     last_damage_kind = nil
     last_damage_taken_time = nil
     aggro_queue = {}
+    last_party_damage_to_target = nil
+    damage_watch_target_id = nil
+    last_self_hit_on_current_target = nil
+    party_activity = {}
 end
 local function Track_Damage_Taken(action, player, current_id)
     local target_count = action['Target Count'] or 1
@@ -1175,6 +1179,7 @@ function Combat()
     end
     if magic_burst_ok then
         if Try_Magic_Burst and Try_Magic_Burst() then return end
+        if Try_Free_Nuke and Try_Free_Nuke() then return end
         if current_job == 'BLM'
             or current_job == 'GEO'
             or current_job == 'SCH'
@@ -1195,6 +1200,9 @@ function Combat()
         and player.vitals.tp >= 3000
         and isBusy == 0
         and not isCasting
+        -- With an ordered chain, a window that is open belongs to
+        -- SC_Monitor; do not smash the opener on top of it.
+        and not (Get_WS_Chain() and sc_active and sc_active(target.id))
         and starter
         and starter[1]
         and active_profile

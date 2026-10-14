@@ -28,5 +28,13 @@ JOB_PROFILES.NIN = {
 	ws_sc_closers = {
 		'Blade: Ten'
 	},
+	-- //lazy chainmode: Shun > Kamu > Shun, then the opener fires again once
+	-- the window ends, so it repeats. //lazy openmode uses the starter and
+	-- closers above instead.
+	ws_sc_chain = {
+		{ 'Blade: Shun', 1000 },
+		{ 'Blade: Kamu', 1000 },
+		{ 'Blade: Shun', 1000 },
+	},
 	food = 'Soy Ramen',
 }

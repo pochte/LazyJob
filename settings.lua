@@ -11,6 +11,32 @@ ws_sc_starter = {'Savage Blade',}
 ws_sc_closers = {
     'Savage Blade',
 }
+-- FREE NUKE WEAKNESSES (BLM, SCH: //lazy freenuke)
+-- Which element a mob is weak to, so free nukes use the right spell. Matched
+-- as whole words in the mob's name, case-insensitive, first match wins. The
+-- element is the spell family: Fire, Blizzard, Aero, Stone, Thunder, Water.
+-- A profile can set its own nuke_weakness. Mobs that match nothing are not
+-- free nuked (a note is printed once per mob name); set nuke_default to nuke
+-- them with some element anyway.
+nuke_weakness = {
+    { 'Worm',   'Fire' },
+    { 'Bat',    'Aero' },
+    { 'Beetle', 'Blizzard' },
+    { 'Eft',    'Blizzard' },
+    { 'Crab',   'Blizzard' },
+}
+-- nuke_default = 'Thunder'
+-- ORDERED SKILLCHAIN (optional, works in a profile too)
+-- Up to 5 weaponskills fired in this exact order. Entry 1 opens, the
+-- chain stops after the last entry. An entry is a name, or { name, min_tp }
+-- (default 1000). When set it replaces ws_sc_starter / ws_sc_closers.
+-- ws_sc_chain = {
+--     { 'Savage Blade', 2000 },
+--     'Aeolian Edge',
+--     'Evisceration',
+--     "Rudra's Storm",
+--     'Exenterator',
+-- }
 -- SPELL BLACKLIST
 -- Monster names Lazy must never cast its configured offensive
 -- spell on. Names are matched case-insensitively.
