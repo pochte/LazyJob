@@ -367,7 +367,7 @@ Currently defined:
 | WHM | Cure bot, Protectra/Shellra/Auspice and other self buffs. No melee |
 | BLM | Magic burst (Tier VI cap) and free nuke (`//lazy freenuke`, tier IV and lower). No melee |
 | SCH | Magic burst and free nuke (`//lazy freenuke`), plus the cure bot when there is no WHM in the party |
-| GEO | Indi-Fury, Luopan abilities (Radial Arcana, Dematerialize, Life Cycle), Entrust (Indi-Refresh on a mage, otherwise Indi-Frailty), Geo-Frailty, magic burst |
+| GEO | Indi-Fury, Luopan abilities (Radial Arcana, Dematerialize, Life Cycle), Entrust (Indi-Refresh on a mage; Indi-Haste on the party leader when they are the only other player and their job can't be read; otherwise Indi-Frailty), Geo-Frailty, magic burst |
 | BRD | Party songs (Honor March, Knight's Minne V). No melee |
 | COR | Rolls (`rolls.lua`), Wildfire opener |
 | DNC | Dancer rotation (`dnc_logic.lua`), Rudra's Storm |
@@ -379,6 +379,13 @@ Mage jobs (WHM, RDM, BLM, GEO, SCH, SMN) load `HealBuffLogic.lua` and
 `RestLogic.lua`, which replace the simpler buff/cure code in `Lazy.lua`;
 other jobs use the simpler code. DNC and COR load `dnc_logic.lua` and
 `rolls.lua`.
+
+Other players' jobs come from the game's party packets, which are sent when
+someone joins, zones or changes job, so a member who was already in the party
+when Lazy loaded can show as `job?` until then. The Entrust debug line
+(`[Lazy][Entrust]`, on by default; `ENTRUST_DEBUG` in `HealBuffLogic.lua`)
+prints every party slot with the job Lazy sees, who the leader is, and why
+Entrust can't be used yet (for example `on recast, 312s left`).
 
 Keys a profile can set (anything else in a profile is ignored):
 
@@ -392,7 +399,7 @@ Keys a profile can set (anything else in a profile is ignored):
 | `self_buffs` | spells kept up on yourself: `{ name, interval (minutes), fallback }` |
 | `self_abilities` | job abilities with conditions (`require_pet`, `max_mp_percent`, `min_pet_hpp`, `max_pet_hpp`) |
 | `party_buffs` | `{ spell, targets ('ALL_PLAYERS' or { jobs = {...} }), interval, range, self }` |
-| `entrust_buffs` | Entrust + Indi spell on a chosen party member (GEO) |
+| `entrust_buffs` | Entrust + Indi spell on a chosen party member (GEO). `targets` is `{ jobs = {...} }`, `{ players_only = true }`, or `{ lone_leader_unknown_job = true }` (the only other player, job unreadable, holding party leader). Set `fallback = true` to use an entry only when no earlier entry has a target |
 | `debuffs`, `dispel` | debuffs on the target, and Dispel (only on `dispel_whitelist` mobs) |
 | `haste_active`, `haste_samba_active`, `haste_targets` | haste handling |
 | `magic_burst`, `burst_spells`, `magic_burst_requires_buff` | burst during skillchain windows: spell family (Fire, Blizzard, Aero, Stone, Thunder, Water, Darkness, Light) mapped to spells, best first |

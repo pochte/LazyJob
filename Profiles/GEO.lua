@@ -41,6 +41,14 @@ JOB_PROFILES.GEO = {
             interval = 1,
         },
         {
+            -- The only other player, job unreadable, holds party leader:
+            -- assume a melee leader and give them Indi-Haste.
+            ability  = 'Entrust',
+            spell    = 'Indi-Haste',
+            targets  = { lone_leader_unknown_job = true },
+            interval = 1,
+        },
+        {
             ability  = 'Entrust',
             spell    = 'Indi-Frailty',
             targets  = { players_only = true },

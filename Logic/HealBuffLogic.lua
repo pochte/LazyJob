@@ -102,9 +102,11 @@ entrust_last_cast   = entrust_last_cast   or {}
 entrust_last_target = entrust_last_target or {}
 entrust_warn_last   = entrust_warn_last   or {}
 ENTRUST_BUBBLE_DURATION = 300 -- seconds; a player holds ONE Indi, so don't overwrite another entrust spell's target within this window
+
 local function Member_Job(m)
     return Get_Party_Member_Job(m)
 end
+
 local function Entrust_Candidate_Ok(key, m, me_zone)
     return key ~= 'p0'                     -- Entrust is never self-cast
         and m
@@ -117,6 +119,7 @@ local function Entrust_Candidate_Ok(key, m, me_zone)
         and m.mob.distance
         and math.sqrt(m.mob.distance) <= 20
 end
+
 -- Names already holding a *different* entrust spell from us.
 local function Entrust_Claimed(this_spell, now)
     local claimed = {}
@@ -127,13 +130,45 @@ local function Entrust_Claimed(this_spell, now)
     end
     return claimed
 end
--- Supports targets = { jobs = {...} } (priority order) and
--- targets = { players_only = true, exclude_self = true } (any in-range player).
+
+-- The ONE other player in the party, or nil when there is none or more
+-- than one. A member we cannot see (other zone) counts as a player, since
+-- trusts are always next to us.
+local function Only_Other_Player(party)
+    local found, count = nil, 0
+    for _, key in ipairs({'p1','p2','p3','p4','p5'}) do
+        local m = party[key]
+        if m and m.name and not (m.mob and m.mob.is_npc) then
+            found, count = { key = key, m = m }, count + 1
+        end
+    end
+    if count == 1 then
+        return found
+    end
+    return nil
+end
+
+-- Supports targets = { jobs = {...} } (priority order),
+-- targets = { players_only = true, exclude_self = true } (any in-range player)
+-- and targets = { lone_leader_unknown_job = true }: the only other player in
+-- the party, when their job could not be read and they hold party leader.
 function Find_Entrust_Target(eb, party, me_zone, now)
     local t = eb.targets
     if type(t) ~= 'table' or not party then return nil end
     local keys = {'p0','p1','p2','p3','p4','p5'}
     local claimed = Entrust_Claimed(eb.spell, now)
+    if t.lone_leader_unknown_job then
+        local only = Only_Other_Player(party)
+        if only
+            and Entrust_Candidate_Ok(only.key, only.m, me_zone)
+            and Member_Job(only.m) == nil
+            and party.party1_leader == only.m.mob.id
+            and not claimed[only.m.name]
+        then
+            return only.m.name
+        end
+        return nil
+    end
     if t.jobs then
         for _, job in ipairs(t.jobs) do
             for _, key in ipairs(keys) do
@@ -158,6 +193,8 @@ function Find_Entrust_Target(eb, party, me_zone, now)
     end
     return nil
 end
+
+
 -- Set false once Entrust is working.
 ENTRUST_DEBUG = (ENTRUST_DEBUG == nil) and true or ENTRUST_DEBUG
 local entrust_dbg_last = {}
@@ -167,6 +204,25 @@ function Entrust_Debug(key, msg)
     if entrust_dbg_last[key] and t - entrust_dbg_last[key] < 5 then return end
     entrust_dbg_last[key] = t
     windower.add_to_chat(207, '[Lazy][Entrust] ' .. msg)
+end
+
+-- Why Can_Cast_Ability said no, for the debug output.
+function Ability_Block_Reason(name)
+    local ability = res.job_abilities:with('name', name)
+    if not ability then
+        return 'not in resources'
+    end
+    local left = windower.ffxi.get_ability_recasts()[ability.recast_id]
+    if left and left > 0 then
+        return 'on recast, ' .. math.ceil(left) .. 's left'
+    end
+    if isCasting then
+        return 'busy: still casting'
+    end
+    if isBusy > 0 then
+        return 'busy: action delay'
+    end
+    return 'no reason found'
 end
 -- One line describing every party slot, for the debug output.
 function Entrust_Party_Summary(party, me_zone)
@@ -179,7 +235,8 @@ function Entrust_Party_Summary(party, me_zone)
             out[#out + 1] = string.format('%s=%s(%s,%sy%s%s)', key, m.name,
                 tostring(Get_Party_Member_Job(m) or 'job?'), tostring(d),
                 (m.mob and m.mob.is_npc) and ',npc' or '',
-                (m.zone ~= me_zone) and ',other zone' or '')
+                (m.zone ~= me_zone) and ',other zone' or '') ..
+                ((party.party1_leader and m.mob and m.mob.id == party.party1_leader) and ',leader' or '')
         end
     end
     return #out > 0 and table.concat(out, ' ') or 'empty'
@@ -447,7 +504,7 @@ function Buff_Tick()
                 local armed = Has_Buff_Named(ent)
                 if not armed then
                     local ok = Can_Cast_Ability(ent)
-                    Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok))
+                    Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok) .. (ok and '' or (' (' .. Ability_Block_Reason(ent) .. ')')))
                     if ok then
                         Cast_Ability(ent)
                         return

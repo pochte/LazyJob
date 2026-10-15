@@ -118,6 +118,8 @@ debuff_last_cast = {}
 refresh_last_cast = {}
 party_buff_last_cast = {}
 entrust_last_cast = {}
+entrust_ability_last_attempt = {}
+entrust_ability_last_success = {}
 dispel_last_cast = {}
 mob_spell_last_cast = {}
 -- Shared with TrustLogic.lua; must be global.
@@ -129,41 +131,46 @@ active_profile = nil
 JOB_PROFILES = {}
 local profile_list = {
 'RDM', 'GEO', 'BLM', 'SCH', 'DNC',
-'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'}
+'NIN', 'WHM', 'WAR', 'THF', 'COR', 'BRD', 'DEFAULT'
+}
 for _, job in ipairs(profile_list) do
 local path = windower.addon_path .. 'profiles/' .. job .. '.lua'
-local f = io.open(path, 'r')
-if f then
-f:close()
-local ok, err = pcall(dofile, path)
+local file = io.open(path, 'r')
+if file then
+file:close()
+-- Load the profile and capture any syntax/runtime errors.
+local ok, result = pcall(dofile, path)
 if not ok then
 windower.add_to_chat(
 167,
-'[Lazy] ERROR loading ' .. job .. '.lua: ' .. tostring(err)
+'[Lazy] ERROR loading ' .. job .. '.lua: '
+.. tostring(result)
 )
 windower.add_to_chat(
 167,
-'[Lazy] ' .. job ..
-' profile NOT loaded -- fix the syntax error above and //lua reload lazy'
+'[Lazy] ' .. job
+.. ' profile NOT loaded. Fix the error above, '
+.. 'then run //lua reload lazy.'
+)
+elseif type(JOB_PROFILES[job]) ~= 'table' then
+windower.add_to_chat(
+167,
+'[Lazy] ERROR: ' .. job
+.. '.lua did not define JOB_PROFILES.'
+.. job .. ' as a table.'
 )
 end
 else
 windower.add_to_chat(
 123,
-'[Lazy] Profile not found: ' .. job .. '.lua → using DEFAULT'
+'[Lazy] Profile not found: ' .. job
+.. '.lua — using DEFAULT if available.'
 )
 end
 end
+-- Ensure a fallback profile always exists.
 JOB_PROFILES.DEFAULT = JOB_PROFILES.DEFAULT or {}
 active_profile = JOB_PROFILES.DEFAULT
--- BACKLINE & DISENGAGE OVERRIDES
-local function Enforce_Backline_Rules()
-local player = windower.ffxi.get_player()
-if not player or not active_profile then return end
-if player.status == 1 and active_profile.auto_engage == false then
-windower.send_command('input /attack off')
-end
-end
 -- NOTE: Ensure_Debuff_Target() now lives in TargetLogic.lua (global).
 -- MOVEMENT DETECTION
 function Is_Moving()
@@ -186,6 +193,7 @@ y = mob.y,
 return moving
 end
 -- JOB PROFILE
+-- JOB PROFILE
 function Update_Job_Profile()
 local player = windower.ffxi.get_player()
 if not player or not player.main_job then return end
@@ -200,6 +208,8 @@ debuff_last_cast = {}
 refresh_last_cast = {}
 party_buff_last_cast = {}
 entrust_last_cast = {}
+entrust_ability_last_attempt = {}
+entrust_ability_last_success = {}
 dispel_last_cast = {}
 mob_spell_last_cast = {}
 Load_Profile_Logic(job)
@@ -297,12 +307,6 @@ if id ~= 0x015 then return end
 local action = packets.parse('outgoing', data)
 PlayerH = action.Rotation
 end)
--- STATUS CHANGE LISTENERS
-windower.register_event('status change', function(new_status_id)
-if new_status_id == 1 then -- Engaged
-Enforce_Backline_Rules()
-end
-end)
 -- COMMANDS
 windower.register_event('addon command', function(...)
 local raw_args = {...}
@@ -358,6 +362,7 @@ Clear_Combat_Target()
 end
 lockon_done = false
 Start_Engine = true
+-- RESET CAST TRACKING
 self_buff_last_cast = {}
 self_ability_last_cast = {}
 haste_last_cast = {}
@@ -365,12 +370,17 @@ debuff_last_cast = {}
 refresh_last_cast = {}
 party_buff_last_cast = {}
 entrust_last_cast = {}
+entrust_ability_last_attempt = {}
+entrust_ability_last_success = {}
 dispel_last_cast = {}
 mob_spell_last_cast = {}
+pending_cast = nil
+-- RESET MOVEMENT / PATHING STATE
 path_last_distance = nil
 path_last_progress_time = nil
 path_stuck_alerted = false
 origin_unreachable_since = nil
+-- RESET COMBAT / MONITOR STATE
 Reset_Damage_Tracking()
 death_reported = false
 is_resting = false
@@ -612,7 +622,6 @@ while Start_Engine do
 local player = windower.ffxi.get_player()
 if player then
 Update_Job_Profile()
-Enforce_Backline_Rules()
 buffactive = convert_buff_list(player.buffs or {})
 if isBusy < 1 then
 pcall(Combat)
@@ -839,49 +848,86 @@ end
 end
 end
 -- 5. ENTRUST BUFFS
+-- 5. ENTRUST BUFFS
 if active_profile.entrust_buffs then
-local me_zone = windower.ffxi.get_info().zone
+local info = windower.ffxi.get_info()
+local me_zone = info and info.zone
 local party = windower.ffxi.get_party()
+entrust_ability_last_success =
+entrust_ability_last_success or {}
 for _, eb in ipairs(active_profile.entrust_buffs) do
 local interval = (eb.interval or 1) * 60
 local last = entrust_last_cast[eb.spell]
 if not last or now - last >= interval then
 local chosen_target = nil
-if type(eb.targets) == 'table' and eb.targets.jobs and party then
-for _, job in ipairs(eb.targets.jobs) do
-if chosen_target then break end
-for _, key in ipairs({'p0', 'p1', 'p2', 'p3', 'p4', 'p5'}) do
-local m = party[key]
-if m
-and m.name
-and m.mob
-and m.mob.id
-and m.zone == me_zone
-and not m.mob.is_npc
-and key ~= 'p0'
-and m.main_job == job
-and m.mob.distance
-and math.sqrt(m.mob.distance) <= 20
+-- Find an eligible party member for Entrust.
+if type(eb.targets) == 'table'
+and type(eb.targets.jobs) == 'table'
+and party
 then
-chosen_target = m.name
+for _, job in ipairs(eb.targets.jobs) do
+if chosen_target then
+break
+end
+for _, key in ipairs({
+'p0', 'p1', 'p2', 'p3', 'p4', 'p5'
+}) do
+local member = party[key]
+local mob = member and member.mob
+if member
+and member.name
+and mob
+and mob.id
+and member.zone == me_zone
+and not mob.is_npc
+and key ~= 'p0'
+and member.main_job == job
+and mob.distance
+and math.sqrt(mob.distance) <= 20
+then
+chosen_target = member.name
 break
 end
 end
 end
 end
 if chosen_target then
-if Can_Cast_Ability(eb.ability or 'Entrust') then
-Cast_Ability(eb.ability or 'Entrust')
+local ability_name = eb.ability or 'Entrust'
+local last_attempt =
+entrust_ability_last_attempt[ability_name]
+local last_success =
+entrust_ability_last_success[ability_name]
+-- Attempt Entrust at most once every five seconds.
+if not last_attempt or now - last_attempt >= 5 then
+entrust_ability_last_attempt[ability_name] = now
+if Can_Cast_Ability(ability_name) then
+Cast_Ability(ability_name)
+entrust_ability_last_success[ability_name] = now
+else
+-- A failed readiness check invalidates any
+-- previous authorization to cast the Indi spell.
+entrust_ability_last_success[ability_name] = nil
+return
+end
+-- Allow the ability command time to process.
+return
+end
+-- Don't cast Indi if the latest ability attempt failed.
+if not last_success or last_success < last_attempt then
 return
 end
 local spell = res.spells:with('name', eb.spell)
-if spell and Cast_Spell_On(eb.spell, chosen_target) then
+if spell
+and Cast_Spell_On(eb.spell, chosen_target)
+then
 pending_cast = {
 store = entrust_last_cast,
 key = eb.spell,
 spell_id = spell.id,
 sent_at = now,
 }
+-- Consume the authorization after sending the spell.
+entrust_ability_last_success[ability_name] = nil
 return
 end
 end
