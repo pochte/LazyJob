@@ -1,6 +1,6 @@
--- NIN JOB PROFILE 
+-- NIN JOB PROFILE
 -- Ninja -- Frontline melee, magic bursts during skillchains.
--- Loaded by Lazy.lua into JOB_PROFILES.NIN 
+-- Loaded by Lazy.lua into JOB_PROFILES.NIN
 JOB_PROFILES.NIN = {
 	auto_engage = true,
 	use_weaponskills = true,
@@ -10,16 +10,14 @@ JOB_PROFILES.NIN = {
 	},
 	magic_burst = true,
 	burst_spells = {
-		Light = {
-			'Raiton: San',
-			'Raiton: Ni',
-			'Raiton: Ichi',
-		},
-		Darkness = {
-			'Hyoton: San',
-			'Hyoton: Ni',
-			'Hyoton: Ichi',
-		},
+		Fire     = { 'Katon: San', 'Katon: Ni', 'Katon: Ichi' },
+		Blizzard = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
+		Aero     = { 'Huton: San', 'Huton: Ni', 'Huton: Ichi' },
+		Stone    = { 'Doton: San', 'Doton: Ni', 'Doton: Ichi' },
+		Thunder  = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
+		Water    = { 'Suiton: San', 'Suiton: Ni', 'Suiton: Ichi' },
+		Light    = { 'Raiton: San', 'Raiton: Ni', 'Raiton: Ichi' },
+		Darkness = { 'Hyoton: San', 'Hyoton: Ni', 'Hyoton: Ichi' },
 	},
 	ws_sc_starter = {
 		'Blade: Ten',
