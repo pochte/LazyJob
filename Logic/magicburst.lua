@@ -1,14 +1,12 @@
 
 -- MAGICBURST.LUA
--- Shared magic burst logic for BLM, GEO, RDM, SCH, and NIN.
+-- Shared magic burst and free nuke logic.
 
 -- SKILLCHAIN ELEMENTS
 local SC_ELEMENTS = {
-	-- Level 4
 	Radiance      = 'Light',
 	Umbra         = 'Darkness',
 
-	-- Level 3
 	Light         = 'Light',
 	Darkness      = 'Darkness',
 	Gravitation   = 'Earth',
@@ -16,7 +14,6 @@ local SC_ELEMENTS = {
 	Distortion    = 'Ice',
 	Fusion        = 'Fire',
 
-	-- Level 2
 	Compression   = 'Darkness',
 	Liquefaction  = 'Fire',
 	Induration    = 'Ice',
@@ -27,19 +24,31 @@ local SC_ELEMENTS = {
 	Impaction     = 'Lightning',
 }
 
--- Skillchain properties give ELEMENT names, but profiles key their burst
--- spell lists by spell FAMILY. Without this translation an Ice, Wind, Earth
--- or Lightning skillchain never found a spell list and never got a burst.
+-- Translate skillchain elements into spell-family keys.
 local SC_FAMILY = {
+	Fire      = 'Fire',
 	Ice       = 'Blizzard',
 	Wind      = 'Aero',
 	Earth     = 'Stone',
 	Lightning = 'Thunder',
+	Water     = 'Water',
+	Light     = 'Light',
+	Darkness  = 'Darkness',
 }
+
+-- RDM MP-based burst settings.
+local RDM_NO_BURST_MP = 350
+local RDM_REDUCED_TIER_MP = 500
+
+-- Nuke mode:
+--   burst = burst spells only
+--   free  = free nukes between skillchains, if enabled for the job
+--   off   = disable automatic nuking
+nuke_mode = nuke_mode or 'burst'
 
 -- Return the element for the target's current skillchain.
 function Get_SC_Element(target)
-	if not target then
+	if not target or not sc_get_property then
 		return nil
 	end
 
@@ -51,9 +60,45 @@ function Get_SC_Element(target)
 	return SC_ELEMENTS[property]
 end
 
--- Return the strongest available spell for the skillchain element.
--- Spell priority is defined by the active job profile.
+-- Return a spell's tier from its Roman numeral suffix.
+local function Get_Burst_Spell_Tier(spell_name)
+	if not spell_name then
+		return nil
+	end
+
+	local roman = spell_name:match(' ([IVX]+)$')
+
+	if not roman then
+		-- Impact is a special spell, not a normal elemental nuke tier.
+		if spell_name == 'Impact' then
+			return nil
+		end
+
+		return 1
+	end
+
+	local tiers = {
+		I = 1,
+		II = 2,
+		III = 3,
+		IV = 4,
+		V = 5,
+		VI = 6,
+	}
+
+	return tiers[roman]
+end
+
+-- Return the strongest available spell for the current skillchain.
+-- RDM:
+--   501+ MP: normal spell priority.
+--   351-500 MP: Tier III or lower.
+--   350 MP or less: no burst.
 function Get_Burst_Spell(target)
+	if nuke_mode == 'off' then
+		return nil
+	end
+
 	if not target or not active_profile or not active_profile.burst_spells then
 		return nil
 	end
@@ -63,28 +108,44 @@ function Get_Burst_Spell(target)
 		return nil
 	end
 
-	local candidates = active_profile.burst_spells[element]
-		or active_profile.burst_spells[SC_FAMILY[element] or '']
+	local family = SC_FAMILY[element] or element
+	local candidates = active_profile.burst_spells[family]
 
 	if not candidates then
 		return nil
 	end
 
 	local player = windower.ffxi.get_player()
-	if not player then
+	if not player or not player.vitals then
+		return nil
+	end
+
+	local mp = player.vitals.mp
+	local is_rdm = player.main_job == 'RDM'
+
+	if is_rdm and mp <= RDM_NO_BURST_MP then
 		return nil
 	end
 
 	local recasts = windower.ffxi.get_spell_recasts()
 
+	-- Spell lists are ordered strongest first.
 	for _, spell_name in ipairs(candidates) do
 		local spell = res.spells:with('name', spell_name)
 
 		if spell
 			and recasts[spell.id] == 0
-			and player.vitals.mp >= spell.mp_cost
+			and mp >= spell.mp_cost
 		then
-			return spell_name
+			if is_rdm and mp <= RDM_REDUCED_TIER_MP then
+				local tier = Get_Burst_Spell_Tier(spell_name)
+
+				if tier and tier <= 3 then
+					return spell_name
+				end
+			else
+				return spell_name
+			end
 		end
 	end
 
@@ -93,6 +154,10 @@ end
 
 -- Cast the best available spell during a valid skillchain window.
 function Try_Magic_Burst()
+	if nuke_mode == 'off' then
+		return false
+	end
+
 	if not active_profile or not active_profile.magic_burst then
 		return false
 	end
@@ -125,14 +190,33 @@ function Try_Magic_Burst()
 	end
 
 	local player = windower.ffxi.get_player()
-	if not player then
+	if not player or not player.vitals then
 		return false
 	end
 
 	local recasts = windower.ffxi.get_spell_recasts()
 
+	-- Recheck affordability immediately before casting.
 	if recasts[spell.id] ~= 0 or player.vitals.mp < spell.mp_cost then
 		return false
+	end
+
+	-- Recheck the RDM MP cutoff in case MP changed during selection.
+	if player.main_job == 'RDM'
+		and player.vitals.mp <= RDM_NO_BURST_MP
+	then
+		return false
+	end
+
+	-- Recheck the low-MP tier restriction.
+	if player.main_job == 'RDM'
+		and player.vitals.mp <= RDM_REDUCED_TIER_MP
+	then
+		local tier = Get_Burst_Spell_Tier(spell_name)
+
+		if not tier or tier > 3 then
+			return false
+		end
 	end
 
 	windower.send_command('input /ma "' .. spell_name .. '" <t>')
@@ -141,13 +225,8 @@ function Try_Magic_Burst()
 	return true
 end
 
--- FREE NUKE (BLM, SCH, OR OTHER PROFILES EXPLICITLY ENABLED)
--- //lazy freenuke: between bursts, nuke the target with tier IV and lower
--- (free_nuke_max_tier) in the element it is weak to.
--- //lazy burstmode: nuke only during bursts (the default).
--- Only profiles with free_nuke = true can free nuke.
-nuke_mode = nuke_mode or 'burst'
-
+-- FREE NUKE SETTINGS
+-- Free nukes are only available to profiles with free_nuke = true.
 local ROMAN = { '', ' II', ' III', ' IV', ' V', ' VI' }
 
 local FAMILY_ELEMENT_ID = {
@@ -176,8 +255,8 @@ local WEATHER_RETRY = 20
 local weather_last_try = {}
 local nuke_unknown_warned = {}
 
--- Learned, castable by the current main/sub job at its current level,
--- off recast.
+-- Check if a spell is learned, available to the current job level,
+-- and not on recast.
 local function Spell_Ready(spell, player, recasts, known)
 	if not spell or not recasts or recasts[spell.id] ~= 0 then
 		return false
@@ -210,8 +289,8 @@ local function Spell_Ready(spell, player, recasts, known)
 	return true
 end
 
--- Something we may attack: a live monster that is unclaimed or claimed by
--- us or the party, in nuke range, and not on spell_blacklist.
+-- Valid monster target, in range, not blacklisted or a party member,
+-- and unclaimed or claimed by us or our party.
 local function Nukeable(target, player)
 	if not target or not target.hpp or target.hpp <= 0 then
 		return false
@@ -246,9 +325,7 @@ local function Nukeable(target, player)
 	return true
 end
 
--- The spell family (Fire, Blizzard, Aero, Stone, Thunder, Water) a mob is
--- weak to. nuke_weakness is an ordered { name word(s), family } list; the
--- name is matched as whole words, case-insensitive.
+-- Find the spell family for the target's known elemental weakness.
 local function Nuke_Family_For(target)
 	local list = (active_profile and active_profile.nuke_weakness)
 		or nuke_weakness
@@ -267,7 +344,7 @@ local function Nuke_Family_For(target)
 	return (active_profile and active_profile.nuke_default) or nuke_default
 end
 
--- MP to keep back so the family's top burst spell can still be cast.
+-- MP to reserve so the family's top burst spell remains affordable.
 local function Burst_Reserve_MP(family)
 	local list = active_profile
 		and active_profile.burst_spells
@@ -278,7 +355,7 @@ local function Burst_Reserve_MP(family)
 	return top and top.mp_cost or 0
 end
 
--- True when the weather, or one of our own storms, already matches.
+-- True if current weather or our own storm matches the element.
 function Weather_Matches(element_id)
 	local info = windower.ffxi.get_info()
 	local weather = info and info.weather and res.weather[info.weather]
@@ -292,9 +369,7 @@ function Weather_Matches(element_id)
 	return (storm and buffactive and buffactive[storm]) and true or false
 end
 
--- Failsafe: if neither the weather nor a storm of ours matches the nuke's
--- element, cast the Storm (II if we have it, else I) on ourselves. Only
--- SCH can cast storms (main, or as a sub at its level).
+-- Cast Storm II or Storm if weather doesn't match.
 local function Try_Weather(element_id, player, recasts, known, mp_after)
 	if Weather_Matches(element_id) then
 		return false
@@ -329,12 +404,14 @@ local function Try_Weather(element_id, player, recasts, known, mp_after)
 	return false
 end
 
--- Cast one free nuke (or the weather for it). Returns true if it acted.
+-- Cast one free nuke or its matching weather spell.
 function Try_Free_Nuke()
-	if nuke_mode ~= 'free'
-		or not active_profile
-		or not active_profile.free_nuke
-	then
+	-- This gate also ensures the off mode blocks free nuking.
+	if nuke_mode ~= 'free' then
+		return false
+	end
+
+	if not active_profile or not active_profile.free_nuke then
 		return false
 	end
 
@@ -359,7 +436,7 @@ function Try_Free_Nuke()
 		return false
 	end
 
-	-- Paused (trust recovery / party join): do not start a new pull.
+	-- Don't start a new pull while targeting is paused.
 	if Targeting_Paused and Targeting_Paused() and not combat_locked_target_id then
 		return false
 	end
@@ -373,7 +450,8 @@ function Try_Free_Nuke()
 
 			windower.add_to_chat(
 				207,
-				"[Lazy] Free nuke: no weakness known for '" .. tostring(target.name) ..
+				"[Lazy] Free nuke: no weakness known for '" ..
+				tostring(target.name) ..
 				"'. Add it to nuke_weakness (or set nuke_default) in settings.lua."
 			)
 		end
@@ -422,21 +500,26 @@ function Try_Free_Nuke()
 	return true
 end
 
--- //lazy burstmode, //lazy freenuke
---
--- BURST MODE:
--- Available to any job profile with magic_burst = true.
---
--- FREE NUKE MODE:
--- Available only to profiles with free_nuke = true.
--- RDM and GEO can use burst mode without enabling free nuking.
+-- Command handler: //lazy burstmode, //lazy freenuke, //lazy nukeoff
 function Set_Nuke_Mode(mode)
+	if mode == 'off' then
+		nuke_mode = 'off'
+
+		windower.add_to_chat(
+			167,
+			'[Lazy] NUKES OFF. Automatic magic nuking disabled.'
+		)
+
+		return
+	end
+
 	if mode == 'free' then
 		if not (active_profile and active_profile.free_nuke) then
 			windower.add_to_chat(
 				167,
 				'[Lazy] Free nuke is not enabled for this job. Staying in burst mode.'
 			)
+
 			return
 		end
 
@@ -444,39 +527,38 @@ function Set_Nuke_Mode(mode)
 
 		windower.add_to_chat(
 			2,
-			'[Lazy] Nuke mode: FREE NUKE. Tier ' ..
-			tostring(active_profile.free_nuke_max_tier or 4) ..
-			' and lower on the target, V/VI saved for magic burst.'
+			'[Lazy] Nuke mode: FREE NUKE.'
 		)
 
 		return
 	end
 
-	-- Default mode is burst-only for every supported job.
 	nuke_mode = 'burst'
 
 	if active_profile and active_profile.magic_burst then
 		windower.add_to_chat(
 			2,
-			'[Lazy] Nuke mode: BURST ONLY. Nukes only during skillchain windows.'
+			'[Lazy] Nuke mode: BURST ONLY.'
 		)
 	else
 		windower.add_to_chat(
 			167,
-			'[Lazy] This job has no magic burst to switch.'
+			'[Lazy] Burst mode selected; this job has no magic burst enabled.'
 		)
 	end
 end
 
 function Get_Nuke_Mode_Text()
+	if nuke_mode == 'off' then
+		return 'nukes off'
+	end
+
 	if not (active_profile and active_profile.magic_burst) then
 		return nil
 	end
 
 	if nuke_mode == 'free' and active_profile.free_nuke then
-		return 'free nuke (tier ' ..
-			tostring(active_profile.free_nuke_max_tier or 4) ..
-			' and lower, V/VI burst only)'
+		return 'free nuke'
 	end
 
 	return 'burst only'

@@ -132,9 +132,6 @@ Target the mob you want, then run this: it fills in `//lazy target` with that
 mob's name for you. It refuses if you have no target, you are the target, or
 the target is a party member or Trust.
 
-#### //lazy assist "Player Name"
-Sets/changes who to assist. Works whether or not autotarget is on, and wins
-over it. `//lazy assist` with no name turns assisting off.
 
 #### //lazy range \<yalms\>
 Sets how far from the origin Lazy will hunt (default 10). With no number it
@@ -172,15 +169,14 @@ when anything needs them: you are being hit, a party member within 30 yalms
 is under 60%, or a magic burst window is open. If something attacks you
 while you are idle, Lazy engages it.
 
-#### //lazy burstmode
-BLM and SCH: nuke only during magic burst, i.e. when a skillchain window is
-open. This is the default. See [Free nuke](#free-nuke-blm-and-sch).
+**#### //lazy burstmode**  
+Jobs with Elemental Magic: automatically nuke only during magic bursts, when a skillchain window is open. This is the default mode. See [Free nuke](#free-nuke-blm-and-sch).
 
-#### //lazy freenuke
-BLM and SCH only: between bursts, nuke the target with tier IV and lower in
-the element it is weak to, and keep tier V and VI for bursting. Other jobs
-get a message and stay as they are. The mode lasts for the session.
-See [Free nuke](#free-nuke-blm-and-sch).
+**#### //lazy freenuke**  
+Jobs with Elemental Magic: automatically nuke between bursts using tier IV and lower spells in the element the target is weak to, while reserving tier V and VI spells for magic bursts. Jobs without applicable Elemental Magic nuking support will receive a message and remain unchanged. This mode lasts for the session. See [Free nuke](#free-nuke-blm-and-sch).
+
+**#### //lazy nukeoff**  
+Disables automatic Elemental Magic nuking, including free nukes and magic bursts. Use `//lazy burstmode` or `//lazy freenuke` to re-enable automatic nuking. This mode lasts for the session.
 
 #### //lazy chainmode
 Switches weaponskills to the full ordered skillchain, `ws_sc_chain` (up to 5

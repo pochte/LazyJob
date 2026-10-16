@@ -328,7 +328,6 @@ print('//lazy follower <player>')
 print('//lazy autotarget on/off')
 print('//lazy target <name>')
 print('//lazy fight')
-print('//lazy assist <player>')
 print('//lazy buffs on/off')
 print('//lazy cure on/off')
 print('//lazy rest on/off')
@@ -452,20 +451,6 @@ if command == 'target' then
 settings.target = args[2] or ''
 return
 end
-if command == 'assist' then
-settings.assist = args[2] or ''
-windower.add_to_chat(
-2,
-'Assist: ' .. (settings.assist ~= '' and settings.assist or 'OFF')
-)
-if settings.assist ~= '' then
-windower.send_command('input /assist ' .. settings.assist)
-if active_profile and active_profile.auto_engage == false then
-windower.send_command('wait 0.4; input /attack off')
-end
-end
-return
-end
 if command == 'buffs' then
 settings.buffs_active = (args[2] ~= 'off')
 windower.add_to_chat(3, 'Buffs: ' .. tostring(settings.buffs_active))
@@ -554,14 +539,19 @@ Snapshot_Trusts()
 return
 end
 if command == 'burstmode' then
-Update_Job_Profile()
-Set_Nuke_Mode('burst')
-return
+    Update_Job_Profile()
+    Set_Nuke_Mode('burst')
+    return
+end
+if command == 'nukeoff' then
+    Update_Job_Profile()
+    Set_Nuke_Mode('off')
+    return
 end
 if command == 'freenuke' then
-Update_Job_Profile()
-Set_Nuke_Mode('free')
-return
+    Update_Job_Profile()
+    Set_Nuke_Mode('free')
+    return
 end
 if command == 'chainmode' then
 Update_Job_Profile()
