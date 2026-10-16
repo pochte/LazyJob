@@ -76,18 +76,19 @@ Starts the helper. It records where you are standing as the origin (hunting
 stays within `//lazy range` yalms of it), detects your main job and loads its
 profile, snapshots your Trusts, and starts everything. It also clears any
 leftover target and combat state from an earlier run. If you haven't picked a
-mode (no `//lazy assist` and autotarget is off) it defaults to leader mode,
-i.e. autotarget on. Running it again while Lazy is already running does
-nothing. It refuses to start while you are dead. If you die while it is
-running, Lazy tells you what killed you and stops.
+mode (no `//lazy follower <player>` target and autotarget is off) it defaults
+to leader mode, i.e. autotarget on. Running it again while Lazy is already
+running does nothing. It refuses to start while you are dead. If you die while
+it is running, Lazy tells you what killed you and stops.
 
 #### //lazy stop
 Stops the helper. Your settings are kept.
 
 #### //lazy reload
-Reloads the options from `data/settings.xml` and re-reads `settings.lua`.
-Profile files are loaded when the addon loads, so after editing one use
-`//lua reload lazy`.
+Fully reloads the addon: every file, including profiles and `settings.lua`.
+Your current settings are saved to `data/settings.xml` first. If Lazy was
+running, it restarts itself a few seconds after the reload; if it was stopped,
+it stays stopped.
 
 #### //lazy save
 Saves the current settings (the ones in [settings.xml](#datasettingsxml-per-character))

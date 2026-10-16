@@ -411,9 +411,15 @@ Start_Engine = false
 return
 end
 if command == 'reload' then
-windower.add_to_chat(2, '....Reloading Config....')
-config.reload(settings)
-dofile(windower.addon_path .. 'settings.lua')
+-- Full addon reload (all files), not just config. Saves settings first,
+-- and restarts afterward only if the engine was running.
+windower.add_to_chat(2, '....Reloading Lazy....')
+local player = windower.ffxi.get_player()
+if player then
+config.save(settings, player.name)
+end
+local restart = Start_Engine and '; wait 3; lazy start' or ''
+windower.send_command('wait 0.5; lua reload lazy' .. restart)
 return
 end
 if command == 'save' then
@@ -539,19 +545,14 @@ Snapshot_Trusts()
 return
 end
 if command == 'burstmode' then
-    Update_Job_Profile()
-    Set_Nuke_Mode('burst')
-    return
-end
-if command == 'nukeoff' then
-    Update_Job_Profile()
-    Set_Nuke_Mode('off')
-    return
+Update_Job_Profile()
+Set_Nuke_Mode('burst')
+return
 end
 if command == 'freenuke' then
-    Update_Job_Profile()
-    Set_Nuke_Mode('free')
-    return
+Update_Job_Profile()
+Set_Nuke_Mode('free')
+return
 end
 if command == 'chainmode' then
 Update_Job_Profile()
