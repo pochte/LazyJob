@@ -964,7 +964,6 @@ end
 coroutine.sleep(0.2)
 end
 end
-```lua
 -- DEBUFF-CASTER TARGET FALLBACK (moved from Lazy.lua; called by Buff_Tick)
 function Ensure_Debuff_Target()
 local player = windower.ffxi.get_player()
@@ -1245,7 +1244,6 @@ end
 coroutine.sleep(ENGAGEMENT_SYNC_INTERVAL)
 end
 end
-```
 -- FACING + COMBAT ROTATION
 -- Moved here from Lazy.lua / JobLogic.lua so there is exactly one copy.
 -- engaged_since is global (Combat's stuck-target Provoke timer).
