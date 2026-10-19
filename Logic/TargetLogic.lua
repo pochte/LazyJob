@@ -697,6 +697,12 @@ combat_lock_time = nil
 combat_started = false
 end
 -- EXACT TARGET SELECTION
+-- Throttled per mob: Target_Monitor (0.1s), Follow_Monitor (0.2s) and
+-- Targeting (0.5s) all re-select, which in the debug log meant hundreds of
+-- identical injected packets while <t> stayed empty.
+local SELECT_MIN_INTERVAL = 0.6
+local last_select_id = nil
+local last_select_time = 0
 -- Select a specific mob by ID, avoiding name-based ambiguity.
 function Select_Target_By_Id(mob)
 if not mob or not mob.id or not mob.index then
@@ -731,6 +737,14 @@ tostring(mob.id)
 )
 return false
 end
+local now_sel = os.clock()
+if last_select_id == current_mob.id
+and (now_sel - last_select_time) < SELECT_MIN_INTERVAL
+then
+return true
+end
+last_select_id = current_mob.id
+last_select_time = now_sel
 local ok, err = pcall(function()
 packets.inject(packets.new('incoming', 0x058, {
 ['Player'] = player.id,
@@ -867,6 +881,13 @@ and not (party_ids and party_ids[claim_id])
 )
 then
 Debug.Target('ENGAGE BLOCKED - CLAIMED BY SOMEONE ELSE OR UNKNOWN CLAIM', mob)
+return false
+end
+-- Do not commit while busy or casting: /attack on sent mid-cast is
+-- silently dropped, and the 10s give-up in Target_Monitor then benches
+-- the mob. Return false so the next tick retries cleanly.
+if (isBusy or 0) > 0 or isCasting then
+Debug.State('ENGAGE DEFERRED - BUSY/CASTING')
 return false
 end
 -- COMMIT COMBAT
@@ -1325,158 +1346,195 @@ windower.ffxi.turn(desired)
 end
 end
 -- Per-tick combat rotation (called by Lazy.lua's Engine via pcall).
+-- Per-tick combat rotation (called by Lazy.lua's Engine via pcall).
 function Combat()
-local player = windower.ffxi.get_player()
-if not player then return end
-local target = windower.ffxi.get_mob_by_target('t')
-local starter = Get_WS_Starter()
-if player.status == 1 then
-if not engaged_since then
-engaged_since = os.clock()
+    local player = windower.ffxi.get_player()
+    if not player then return end
+    local target = windower.ffxi.get_mob_by_target('t')
+    local starter = Get_WS_Starter()
+    
+    if player.status == 1 then
+        if not engaged_since then
+            engaged_since = os.clock()
+        end
+    else
+        engaged_since = nil
+    end
+
+    -- DEBUFFS FIRST: while a debuff is due and castable on this mob, hold off
+    -- weaponskills/nukes/abilities so Buff_Tick gets the window. Bounded, so a
+    -- debuff that can never land cannot freeze the rotation.
+    if Debuff_Pending and Debuff_Pending() then
+        debuff_hold_since = debuff_hold_since or os.clock()
+        if (os.clock() - debuff_hold_since) < 8 then
+            return
+        end
+    else
+        debuff_hold_since = nil
+    end
+
+    if active_profile
+        and active_profile.provoke_if_stuck
+        and player.status == 1
+        and target
+        and engaged_since
+        and (os.clock() - engaged_since) >= (active_profile.stuck_threshold or 10)
+    then
+        if Can_Cast_Ability('Provoke') then
+            Cast_Ability('Provoke')
+        end
+        TurnToTarget()
+    end
+
+    local magic_burst_ok = active_profile and active_profile.magic_burst
+    if magic_burst_ok and active_profile.magic_burst_requires_buff then
+        magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff]
+            and true
+            or false
+    end
+
+    if magic_burst_ok then
+        -- (Try_Magic_Burst leaves the window to this job's own chain by itself.)
+        if Try_Magic_Burst and Try_Magic_Burst() then return end
+        
+        -- RDM: let a real magic burst happen, then prioritize required debuffs.
+        -- Buff_Tick performs the cast; Combat yields so it can run before ordinary actions.
+        if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
+            return
+        end
+        
+        if Try_Free_Nuke and Try_Free_Nuke() then return end
+
+        -- Jobs that never melee (auto_engage = false: BLM, GEO, SCH) stop here.
+        -- A melee job with magic burst (NIN) carries on to the weaponskill code
+        -- below. It used to return here too, so NIN never opened a skillchain.
+        if active_profile.auto_engage == false then
+            return
+        end
+
+        -- A melee job (NIN) must not open a new chain on top of a window it is
+        -- about to burst: the opener would replace the skillchain mid-cast.
+        if Burst_Window_Open
+            and Get_Burst_Spell
+            and Burst_Window_Open(target)
+            and Get_Burst_Spell(target)
+        then
+            return
+        end
+    end
+
+    if active_profile
+        and active_profile.dnc_rotation
+        and current_job == 'DNC'
+    then
+        if Try_DNC_Actions() then return end
+    end
+
+    -- RDM debuffs also take priority when its magic-burst mode is disabled.
+    if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
+        return
+    end
+
+    if target
+        and target.distance
+        and math.sqrt(target.distance) <= 3
+        and player.vitals.tp >= 3000
+        and isBusy == 0
+        and not isCasting
+        -- With an ordered chain, a window that is open belongs to
+        -- SC_Monitor; do not smash the opener on top of it.
+        and not (Get_WS_Chain() and sc_active and sc_active(target.id))
+        and starter
+        and starter[1]
+        and active_profile
+        and active_profile.use_weaponskills ~= false
+    then
+        if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then
+            return
+        end
+        windower.send_command(
+            'input /ws "' .. starter[1] .. '" <t>'
+        )
+        isBusy = Action_Delay
+        dnc_flourish_pending = true
+        return
+    end
+
+    if player.status ~= 1
+        and (not active_profile or active_profile.auto_engage ~= false)
+    then
+        return
+    end
+
+    lockon_done = false
+    if player.vitals.tp >= 400
+        and target
+        and target.distance
+        and math.sqrt(target.distance) <= 3
+    then
+        local recasts = windower.ffxi.get_ability_recasts()
+        for _, ability_name in ipairs(Get_Needed_Buffs() or {}) do
+            if not buffactive[ability_name] then
+                if ability_name == 'Food' then
+                    local food_item = Get_Food()
+                    if food_item then
+                        windower.send_command(
+                            'input /item "' .. food_item .. '" <me>'
+                        )
+                        isBusy = Action_Delay
+                        return
+                    end
+                else
+                    local ability = res.job_abilities:with(
+                        'name',
+                        ability_name
+                    )
+                    if ability and recasts[ability.recast_id] == 0 then
+                        Cast_Ability(ability_name)
+                        return
+                    end
+                end
+            end
+        end
+    end
+
+    TurnToTarget()
+    if target and target.distance and math.sqrt(target.distance) <= 3 then
+        local tp = player.vitals.tp
+        if sc_active
+            and not sc_active(target.id)
+            and starter
+            and tp >= starter[2]
+            and active_profile
+            and active_profile.use_weaponskills ~= false
+        then
+            if current_job == 'DNC'
+                and Try_DNC_Pre_WS_Flourish()
+            then
+                return
+            end
+            windower.send_command(
+                'input /ws "' .. starter[1] .. '" <t>'
+            )
+            isBusy = Action_Delay
+            dnc_flourish_pending = true
+            return
+        end
+        if settings.spell_active
+            and Can_Cast_Spell(settings.spell)
+            and not Is_Blacklisted(target.name)
+        then
+            Cast_Spell(settings.spell)
+        end
+    elseif target
+        and settings.spell_active
+        and Can_Cast_Spell(settings.spell)
+        and not Is_Blacklisted(target.name)
+    then
+        Cast_Spell(settings.spell)
+    end
 end
-else
-engaged_since = nil
-end
-if active_profile
-and active_profile.provoke_if_stuck
-and player.status == 1
-and target
-and engaged_since
-and (os.clock() - engaged_since) >= (active_profile.stuck_threshold or 10)
-then
-if Can_Cast_Ability('Provoke') then
-Cast_Ability('Provoke')
-end
-TurnToTarget()
-end
-local magic_burst_ok = active_profile and active_profile.magic_burst
-if magic_burst_ok and active_profile.magic_burst_requires_buff then
-magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff]
-and true
-or false
-end
-if magic_burst_ok then
--- (Try_Magic_Burst leaves the window to this job's own chain by itself.)
-if Try_Magic_Burst and Try_Magic_Burst() then return end
-if Try_Free_Nuke and Try_Free_Nuke() then return end
--- Jobs that never melee (auto_engage = false: BLM, GEO, SCH) stop here.
--- A melee job with magic burst (NIN) carries on to the weaponskill code
--- below. It used to return here too, so NIN never opened a skillchain.
-if active_profile.auto_engage == false then
-return
-end
--- A melee job (NIN) must not open a new chain on top of a window it is
--- about to burst: the opener would replace the skillchain mid-cast.
-if Burst_Window_Open
-and Get_Burst_Spell
-and Burst_Window_Open(target)
-and Get_Burst_Spell(target)
-then
-return
-end
-end
-if active_profile
-and active_profile.dnc_rotation
-and current_job == 'DNC'
-then
-if Try_DNC_Actions() then return end
-end
-if target
-and target.distance
-and math.sqrt(target.distance) <= 3
-and player.vitals.tp >= 3000
-and isBusy == 0
-and not isCasting
--- With an ordered chain, a window that is open belongs to
--- SC_Monitor; do not smash the opener on top of it.
-and not (Get_WS_Chain() and sc_active and sc_active(target.id))
-and starter
-and starter[1]
-and active_profile
-and active_profile.use_weaponskills ~= false
-then
-if current_job == 'DNC' and Try_DNC_Pre_WS_Flourish() then
-return
-end
-windower.send_command(
-'input /ws "' .. starter[1] .. '" <t>'
-)
-isBusy = Action_Delay
-dnc_flourish_pending = true
-return
-end
-if player.status ~= 1
-and (not active_profile or active_profile.auto_engage ~= false)
-then
-return
-end
-lockon_done = false
-if player.vitals.tp >= 400
-and target
-and target.distance
-and math.sqrt(target.distance) <= 3
-then
-local recasts = windower.ffxi.get_ability_recasts()
-for _, ability_name in ipairs(Get_Needed_Buffs() or {}) do
-if not buffactive[ability_name] then
-if ability_name == 'Food' then
-local food_item = Get_Food()
-if food_item then
-windower.send_command(
-'input /item "' .. food_item .. '" <me>'
-)
-isBusy = Action_Delay
-return
-end
-else
-local ability = res.job_abilities:with(
-'name',
-ability_name
-)
-if ability and recasts[ability.recast_id] == 0 then
-Cast_Ability(ability_name)
-return
-end
-end
-end
-end
-end
-TurnToTarget()
-if target and target.distance and math.sqrt(target.distance) <= 3 then
-local tp = player.vitals.tp
-if sc_active
-and not sc_active(target.id)
-and starter
-and tp >= starter[2]
-and active_profile
-and active_profile.use_weaponskills ~= false
-then
-if current_job == 'DNC'
-and Try_DNC_Pre_WS_Flourish()
-then
-return
-end
-windower.send_command(
-'input /ws "' .. starter[1] .. '" <t>'
-)
-isBusy = Action_Delay
-dnc_flourish_pending = true
-return
-end
-if settings.spell_active
-and Can_Cast_Spell(settings.spell)
-and not Is_Blacklisted(target.name)
-then
-Cast_Spell(settings.spell)
-end
-elseif target
-and settings.spell_active
-and Can_Cast_Spell(settings.spell)
-and not Is_Blacklisted(target.name)
-then
-Cast_Spell(settings.spell)
-end
-end
+
 -- TARGET MONITOR
 function Target_Monitor()
 while Start_Engine do
@@ -1653,6 +1711,8 @@ elseif pending_target_id then
 local expected_id = pending_target_id
 local confirmed = Confirm_Target({ id = expected_id })
 if confirmed then
+-- Timeout counts from the last time the target was confirmed.
+pending_target_time = os.clock()
 local mob = windower.ffxi.get_mob_by_id(expected_id)
 if not mob
 or not mob.valid_target
@@ -1678,6 +1738,17 @@ Debug.Target('CONFIRMED TARGET READY TO ENGAGE', mob)
 Engage_Target(mob)
 end
 end
+elseif pending_target_time > 0
+and (os.clock() - pending_target_time) > TARGET_SELECT_TIMEOUT
+then
+-- The select never landed. Bench this mob briefly so autotarget
+-- picks another instead of sitting here spamming the same packet.
+Debug.Log('>>> TARGET SELECT TIMED OUT - BENCHING <<< target=' .. tostring(expected_id))
+unattackable_until[expected_id] = os.clock() + 10
+managed_target_id = nil
+pending_target_id = nil
+pending_target_time = 0
+windower.ffxi.follow(0)
 end
 -- EXISTING MANAGED TARGET
 elseif managed_target_id then

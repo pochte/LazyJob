@@ -8,15 +8,14 @@ JOB_PROFILES.RDM = {
     },
     self_buffs = {
         { name = 'Haste II', interval = 23 },
-        { name = 'Temper II', interval = 20 },
-        { name = 'Gain-STR', interval = 30 },
+        { name = 'Temper II', interval = 5 },
+        { name = 'Gain-STR', interval = 15 },
         { name = 'Enfire II', interval = 20 },
-        
     },
     debuffs = {
-        { name = 'Distract III' },
-        { name = 'Inundation' },
         { name = 'Dia III' },
+        { name = 'Inundation' },
+        { name = 'Distract III' },
     },
     party_buffs = {
         {
@@ -29,7 +28,7 @@ JOB_PROFILES.RDM = {
         {
             spell = 'Refresh III',
             targets = { jobs = { 'RDM', 'WHM', 'SCH', 'BLM', 'GEO', 'PLD' } },
-            interval = 10,
+            interval = 8,
             range = 20,
             self = false,
         },

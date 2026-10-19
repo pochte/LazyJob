@@ -261,7 +261,11 @@ pending_cast = nil
 end
 elseif action.Category == 8 then
 isCasting = true
-if action['Target 1 Action 1 Message'] == 0 then
+cast_started_at = os.clock()
+-- 28787 = cast interrupted (e.g. the bot walked while you were casting)
+if action['Target 1 Action 1 Message'] == 0
+or action.Param == 28787
+then
 isCasting = false
 isBusy = Action_Delay
 pending_cast = nil
@@ -629,6 +633,17 @@ local player = windower.ffxi.get_player()
 if player then
 Update_Job_Profile()
 buffactive = convert_buff_list(player.buffs or {})
+-- Watchdog: isCasting is only cleared by a finish/interrupt packet. If one
+-- is ever missed (manual cast interrupted while the bot moves), every buff,
+-- debuff, cure and engage check stays blocked. No cast lasts this long.
+if isCasting
+and cast_started_at
+and (os.clock() - cast_started_at) > 15
+then
+isCasting = false
+cast_started_at = nil
+windower.add_to_chat(167, '[Lazy] Cast state was stuck -- reset.')
+end
 if isBusy < 1 then
 pcall(Combat)
 else
@@ -642,6 +657,7 @@ function SC_Monitor()
 while Start_Engine do
 local player = windower.ffxi.get_player()
 if player
+and not (current_job == 'RDM' and Debuff_Pending and Debuff_Pending())
 and player.status == 1
 and isBusy < 1
 and player.vitals.tp >= 1000
@@ -753,28 +769,7 @@ if not player then return end
 local now = os.clock()
 Update_Job_Profile()
 -- 1. DEBUFF LOGIC (With require_no_pet & post-ability logic)
--- Debuff timers belong to the mob, not the session. Without this a new pull
--- inside the interval (60s default) was never debuffed at all.
-do
-local cur_t = windower.ffxi.get_mob_by_target('t')
-if cur_t
-and cur_t.id
-and cur_t.is_npc
-and not Is_Party_Member(cur_t.id)
-and cur_t.id ~= debuff_target_id
-then
-debuff_target_id = cur_t.id
--- Cleared in place: pending_cast.store points at this table.
-for k in pairs(debuff_last_cast) do
-debuff_last_cast[k] = nil
-end
-end
-end
--- debuffs_engaged_only (profile flag): melee jobs get into the fight first
--- and debuff once engaged, instead of casting while the pull is pending.
-if active_profile.debuffs
-and not (active_profile.debuffs_engaged_only and player.status ~= 1)
-then
+if active_profile.debuffs then
 Ensure_Debuff_Target()
 local target = windower.ffxi.get_mob_by_target('t')
 local pet = windower.ffxi.get_mob_by_target('pet')

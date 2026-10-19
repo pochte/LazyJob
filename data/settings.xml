@@ -13,6 +13,7 @@
         <weaponskill_active>true</weaponskill_active>
     </global>
     <baelfire>
+        <assist>norrec</assist>
         <autotarget>true</autotarget>
         <target>rank eft</target>
     </baelfire>

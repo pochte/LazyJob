@@ -253,196 +253,256 @@ function Has_Buff_Named(name)
     end
     return false
 end
+-- True while a debuff is due on the current target and could be cast right
+-- now. Combat() uses it to hold off weaponskills/nukes so Buff_Tick gets the
+-- window; a job with TP to spend would otherwise starve the debuffs.
+function Debuff_Pending()
+    if not settings.buffs_active or not active_profile or not active_profile.debuffs then
+        return false
+    end
+    local player = windower.ffxi.get_player()
+    if not player or not player.vitals then return false end
+    if active_profile.debuffs_engaged_only and player.status ~= 1 then
+        return false
+    end
+    local target = windower.ffxi.get_mob_by_target('t')
+    if not target
+        or not target.id
+        or not target.is_npc
+        or not target.hpp
+or target.hpp <= 0
+or Is_Blacklisted(target.name)
+or Is_Party_Member(target.id)
+then
+return false
+end
+local pet = windower.ffxi.get_mob_by_target('pet')
+local recasts = windower.ffxi.get_spell_recasts()
+local known = windower.ffxi.get_spells()
+for _, debuff in ipairs(active_profile.debuffs) do
+local names, require_no_pet
+if type(debuff) == 'string' then
+names = {debuff}
+elseif type(debuff) == 'table' then
+names = type(debuff.name) == 'table' and debuff.name or {debuff.name}
+require_no_pet = debuff.require_no_pet
+end
+if names and names[1] and not (require_no_pet and pet) then
+local key = tostring(target.id) .. ':' .. tostring(names[1])
+if not debuff_last_cast[key] then
+for _, name in ipairs(names) do
+local spell = res.spells:with('name', name)
+if spell then
+if known and known[spell.id]
+and recasts[spell.id] == 0
+and player.vitals.mp >= spell.mp_cost
+then
+return true
+end
+elseif res.job_abilities:with('name', name)
+and Can_Cast_Ability(name)
+then
+return true
+end
+end
+end
+end
+end
+return false
+end
 -- buff logic
 function Buff_Tick()
-    if not settings.buffs_active or not active_profile then return end
-    if pending_cast and os.clock() - pending_cast.sent_at > 10 then
-        pending_cast = nil
-    end
-    if isBusy > 0 or isCasting or pending_cast then return end
-    local player = windower.ffxi.get_player()
-    if not player then return end
-    local now = os.clock()
-    Update_Job_Profile()
-    -- 1. DEBUFF LOGIC :Once per mob
-    if active_profile.debuffs then
-        Ensure_Debuff_Target()
-        local target = windower.ffxi.get_mob_by_target('t')
-        local pet = windower.ffxi.get_mob_by_target('pet')
-        if target
-            and target.hpp
-            and target.hpp > 0
-            and not Is_Blacklisted(target.name)
-        then
-            local mob_id = target.id or target.index or target.name
-            for _, debuff in ipairs(active_profile.debuffs) do
-                local names
-                local target_spec
-                local require_no_pet
-                local use_ability_before
-                local use_ability_after
-                if type(debuff) == 'string' then
-                    names = {debuff}
-                    target_spec = '<t>'
-                elseif type(debuff) == 'table' then
-                    names = type(debuff.name) == 'table'
-                        and debuff.name or {debuff.name}
-                    target_spec = debuff.target or '<t>'
-                    require_no_pet = debuff.require_no_pet
-                    use_ability_before = debuff.use_ability_before
-                    use_ability_after = debuff.use_ability_after
-                end
-                if names and names[1] then
-                    local spell_key = tostring(mob_id)
-                        .. ':' .. tostring(names[1])
-                    local before_key = 'before:' .. spell_key
-                    local pet_ok = not (require_no_pet and pet)
-                    if pet_ok and not debuff_last_cast[spell_key] then
-                        -- Run any setup ability once for this mob.
-                        if use_ability_before
-                            and not debuff_last_cast[before_key]
-                            and Can_Cast_Ability(use_ability_before)
-                        then
-                            Cast_Ability(use_ability_before)
-                            debuff_last_cast[before_key] = os.clock()
-                            return
-                        end
-                        local fired = false
-                        for _, name in ipairs(names) do
-                            local spell = res.spells:with('name', name)
-                            if spell and Cast_Spell_On(name, target_spec) then
-                                local cast_time = os.clock()
-                                debuff_last_cast[spell_key] = cast_time
-                                pending_cast = {
-                                    store = debuff_last_cast,
-                                    key = spell_key,
-                                    spell_id = spell.id,
-                                    sent_at = cast_time,
-                                }
-                                if use_ability_after then
-                                    Schedule_Follow_Up(
-                                        use_ability_after,
-                                        require_no_pet
-                                    )
-                                end
-                                fired = true
-                                break
-                            end
-                            local ability = res.job_abilities:with('name', name)
-                            if ability and Cast_Ability_On(name, target_spec) then
-                                debuff_last_cast[spell_key] = os.clock()
-                                if use_ability_after then
-                                    local follow_up = use_ability_after
-                                    coroutine.schedule(function()
-                                        coroutine.sleep(2.5)
-                                        if Can_Cast_Ability(follow_up) then
-                                            Cast_Ability(follow_up)
-                                        end
-                                    end, 0)
-                                end
-                                fired = true
-                                break
-                            end
-                        end
-                        if fired then return end
-                    end
-                end
-            end
-        end
-    end
-    -- DISPEL
-    if active_profile.dispel then
-        local dispel_cfg = active_profile.dispel
-        local dispel_ok = true
-        if dispel_cfg.require_buff and not buffactive[dispel_cfg.require_buff] then
-            dispel_ok = false
-        end
-        local last = dispel_last_cast[dispel_cfg.spell]
-        local interval = dispel_cfg.interval or 20
-        if dispel_ok and (not last or now - last >= interval) then
-            local target = windower.ffxi.get_mob_by_target('t')
-            if target
-                and target.name
-                and target.hpp
-                and target.hpp > 0
-                and not Is_Blacklisted(target.name)
-                and Is_Dispel_Whitelisted(target.name)
-            then
-                local spell = res.spells:with('name', dispel_cfg.spell)
-                if spell and Cast_Spell_On(dispel_cfg.spell, '<t>') then
-                    windower.add_to_chat(207, '[Lazy] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
-                    pending_cast = {
-                        store = dispel_last_cast,
-                        key = dispel_cfg.spell,
-                        spell_id = spell.id,
-                        sent_at = now,
-                    }
-                    return
-                end
-            end
-        end
-    end
-    -- MOB-SPECIFIC SPELLS
-    if active_profile.mob_spells then
-        local target = windower.ffxi.get_mob_by_target('t')
-        if target and target.name and target.hpp and target.hpp > 0 then
-            for _, entry in ipairs(active_profile.mob_spells) do
-                if string.lower(target.name) == string.lower(entry.mob_name) then
-                    local names = type(entry.names) == 'table' and entry.names or {entry.names}
-                    local key = 'mobspell:' .. entry.mob_name .. ':' .. names[1]
-                    local last = mob_spell_last_cast[key]
-                    local interval = entry.interval or 1
-                    if not last or now - last >= interval then
-                        for _, name in ipairs(names) do
-                            local spell = res.spells:with('name', name)
-                            if spell and Cast_Spell_On(name, entry.target or '<t>') then
-                                pending_cast = {
-                                    store = mob_spell_last_cast,
-                                    key = key,
-                                    spell_id = spell.id,
-                                    sent_at = now,
-                                }
-                                return
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    --JOB ABILITIES
-    for _, ability_name in ipairs(active_profile.job_abilities or {}) do
-        if Can_Cast_Ability(ability_name) then
-            Cast_Ability(ability_name)
-            return
-        end
-    end
-    -- SELF BUFFS
-    for _, buff in ipairs(active_profile.self_buffs or {}) do
-        local names = type(buff.name) == 'table' and buff.name or {buff.name}
-        local key = names[1]
-        local interval = (buff.interval or 20) * 60
-        local last = self_buff_last_cast[key]
-        local buff_ok = not Has_Buff_Named('Entrust')
-        if buff.require_buff and not buffactive[buff.require_buff] then
-            buff_ok = false
-        end
-        if buff_ok and (not last or now - last >= interval) then
-            for _, name in ipairs(names) do
-                local spell = res.spells:with('name', name)
-                if spell and Cast_Spell_On(name, '<me>') then
-                    pending_cast = {
-                        store = self_buff_last_cast,
-                        key = key,
-                        spell_id = spell.id,
-                        sent_at = now,
-                    }
-                    return
-                end
-            end
-        end
-    end
-    -- SELF ABILITIES: Extended Pet & MP logic.
+if not settings.buffs_active or not active_profile then return end
+if pending_cast and os.clock() - pending_cast.sent_at > 10 then
+pending_cast = nil
+end
+if isBusy > 0 or isCasting or pending_cast then return end
+local player = windower.ffxi.get_player()
+if not player then return end
+local now = os.clock()
+Update_Job_Profile()
+-- 1. DEBUFF LOGIC :Once per mob
+-- debuffs_engaged_only (profile flag): get into the fight first.
+if active_profile.debuffs
+and not (active_profile.debuffs_engaged_only and player.status ~= 1)
+then
+Ensure_Debuff_Target()
+local target = windower.ffxi.get_mob_by_target('t')
+local pet = windower.ffxi.get_mob_by_target('pet')
+if target
+and target.hpp
+and target.hpp > 0
+and not Is_Blacklisted(target.name)
+then
+local mob_id = target.id or target.index or target.name
+for _, debuff in ipairs(active_profile.debuffs) do
+local names
+local target_spec
+local require_no_pet
+local use_ability_before
+local use_ability_after
+if type(debuff) == 'string' then
+names = {debuff}
+target_spec = ''
+elseif type(debuff) == 'table' then
+names = type(debuff.name) == 'table'
+and debuff.name or {debuff.name}
+target_spec = debuff.target or ''
+require_no_pet = debuff.require_no_pet
+use_ability_before = debuff.use_ability_before
+use_ability_after = debuff.use_ability_after
+end
+if names and names[1] then
+local spell_key = tostring(mob_id)
+.. ':' .. tostring(names[1])
+local before_key = 'before:' .. spell_key
+local pet_ok = not (require_no_pet and pet)
+if pet_ok and not debuff_last_cast[spell_key] then
+-- Run any setup ability once for this mob.
+if use_ability_before
+and not debuff_last_cast[before_key]
+and Can_Cast_Ability(use_ability_before)
+then
+Cast_Ability(use_ability_before)
+debuff_last_cast[before_key] = os.clock()
+return
+end
+local fired = false
+for _, name in ipairs(names) do
+local spell = res.spells:with('name', name)
+if spell and Cast_Spell_On(name, target_spec) then
+local cast_time = os.clock()
+-- The incoming action handler records this only after a successful cast.
+pending_cast = {
+store = debuff_last_cast,
+key = spell_key,
+spell_id = spell.id,
+sent_at = cast_time,
+}
+if use_ability_after then
+Schedule_Follow_Up(
+use_ability_after,
+require_no_pet
+)
+end
+fired = true
+break
+end
+local ability = res.job_abilities:with('name', name)
+if ability and Cast_Ability_On(name, target_spec) then
+debuff_last_cast[spell_key] = os.clock()
+if use_ability_after then
+local follow_up = use_ability_after
+coroutine.schedule(function()
+coroutine.sleep(2.5)
+if Can_Cast_Ability(follow_up) then
+Cast_Ability(follow_up)
+end
+end, 0)
+end
+fired = true
+break
+end
+end
+if fired then return end
+end
+end
+end
+end
+end
+-- DISPEL
+if active_profile.dispel then
+local dispel_cfg = active_profile.dispel
+local dispel_ok = true
+if dispel_cfg.require_buff and not buffactive[dispel_cfg.require_buff] then
+dispel_ok = false
+end
+local last = dispel_last_cast[dispel_cfg.spell]
+local interval = dispel_cfg.interval or 20
+if dispel_ok and (not last or now - last >= interval) then
+local target = windower.ffxi.get_mob_by_target('t')
+if target
+and target.name
+and target.hpp
+and target.hpp > 0
+and not Is_Blacklisted(target.name)
+and Is_Dispel_Whitelisted(target.name)
+then
+local spell = res.spells:with('name', dispel_cfg.spell)
+if spell and Cast_Spell_On(dispel_cfg.spell, '') then
+windower.add_to_chat(207, '[Lazy] Safety-cast ' .. dispel_cfg.spell .. ' on ' .. target.name .. '.')
+pending_cast = {
+store = dispel_last_cast,
+key = dispel_cfg.spell,
+spell_id = spell.id,
+sent_at = now,
+}
+return
+end
+end
+end
+end
+-- MOB-SPECIFIC SPELLS
+if active_profile.mob_spells then
+local target = windower.ffxi.get_mob_by_target('t')
+if target and target.name and target.hpp and target.hpp > 0 then
+for _, entry in ipairs(active_profile.mob_spells) do
+if string.lower(target.name) == string.lower(entry.mob_name) then
+local names = type(entry.names) == 'table' and entry.names or {entry.names}
+local key = 'mobspell:' .. entry.mob_name .. ':' .. names[1]
+local last = mob_spell_last_cast[key]
+local interval = entry.interval or 1
+if not last or now - last >= interval then
+for _, name in ipairs(names) do
+local spell = res.spells:with('name', name)
+if spell and Cast_Spell_On(name, entry.target or '') then
+pending_cast = {
+store = mob_spell_last_cast,
+key = key,
+spell_id = spell.id,
+sent_at = now,
+}
+return
+end
+end
+end
+end
+end
+end
+end
+--JOB ABILITIES
+for _, ability_name in ipairs(active_profile.job_abilities or {}) do
+if Can_Cast_Ability(ability_name) then
+Cast_Ability(ability_name)
+return
+end
+end
+-- SELF BUFFS
+for _, buff in ipairs(active_profile.self_buffs or {}) do
+local names = type(buff.name) == 'table' and buff.name or {buff.name}
+local key = names[1]
+local interval = (buff.interval or 20) * 60
+local last = self_buff_last_cast[key]
+local buff_ok = not Has_Buff_Named('Entrust')
+if buff.require_buff and not buffactive[buff.require_buff] then
+buff_ok = false
+end
+if buff_ok and (not last or now - last >= interval) then
+for _, name in ipairs(names) do
+local spell = res.spells:with('name', name)
+if spell and Cast_Spell_On(name, '') then
+pending_cast = {
+store = self_buff_last_cast,
+key = key,
+spell_id = spell.id,
+sent_at = now,
+}
+return
+end
+end
+end
+end
+ -- SELF ABILITIES: Extended Pet & MP logic.
     local self_ability_list = {}
     for _, ab in ipairs(active_profile.self_abilities or {}) do
         self_ability_list[#self_ability_list + 1] = ab
@@ -455,152 +515,126 @@ function Buff_Tick()
             end
         end
     end
-    for _, ab in ipairs(self_ability_list) do
-        local interval = (ab.interval or 20) * 60
-        local last = self_ability_last_cast[ab.name]
-        local due = not last or now - last >= interval
-        if due then
-            local pet_ok = true
-            local mp_ok = true
-            local pet = windower.ffxi.get_mob_by_target('pet')
-            if ab.require_pet and not pet then
-                pet_ok = false
-            elseif ab.max_pet_hpp and pet and pet.hpp and pet.hpp > ab.max_pet_hpp then
-                pet_ok = false
-            elseif ab.min_pet_hpp and pet and pet.hpp and pet.hpp < ab.min_pet_hpp then
-                pet_ok = false
-            end
-            if ab.max_mp_percent and player.vitals and player.vitals.mpp then
-                if player.vitals.mpp > ab.max_mp_percent then
-                    mp_ok = false
-                end
-            end
-            if pet_ok and mp_ok and Can_Cast_Ability(ab.name) then
-                Cast_Ability(ab.name)
-                self_ability_last_cast[ab.name] = now
-                return
-            end
-        end
-    end
-    -- ENTRUST BUFFS
-    if active_profile.entrust_buffs then
-        local me_zone = windower.ffxi.get_info().zone
-        local party = windower.ffxi.get_party()
-        local earlier_target_exists = false  -- an earlier (higher priority) entry has a valid target
-        for _, eb in ipairs(active_profile.entrust_buffs) do
-            local interval = (eb.interval or 1) * 60
-            local last = entrust_last_cast[eb.spell]
-            local candidate = Find_Entrust_Target(eb, party, me_zone, now)
-            local skip = eb.fallback and earlier_target_exists
-            if candidate and not eb.fallback then earlier_target_exists = true end
-            local ent = eb.ability or 'Entrust'
-            if skip then
-                Entrust_Debug(eb.spell .. ':skip', eb.spell .. ' skipped (fallback; a mage target exists)')
-            elseif last and now - last < interval then
-                Entrust_Debug(eb.spell .. ':cd', eb.spell .. ' on interval, ' .. math.ceil(interval - (now - last)) .. 's left')
-            elseif not candidate then
-                Entrust_Debug(eb.spell .. ':nt', 'no valid target in range for ' .. tostring(eb.spell) .. ' | party: ' .. Entrust_Party_Summary(party, me_zone))
-            else
-                local armed = Has_Buff_Named(ent)
-                if not armed then
-                    local ok = Can_Cast_Ability(ent)
-                    Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok) .. (ok and '' or (' (' .. Ability_Block_Reason(ent) .. ')')))
-                    if ok then
-                        Cast_Ability(ent)
-                        return
-                    end
-                else
-                    local spell = res.spells:with('name', eb.spell)
-                    local ok = spell and Cast_Spell_On(eb.spell, candidate)
-                    Entrust_Debug(eb.spell .. ':sp', ent .. ' active; Cast_Spell_On(' .. eb.spell .. ', ' .. candidate .. ')=' .. tostring(ok and true or false) .. (spell and '' or ' (spell not in res)'))
-                    if ok then
-                        entrust_last_target[eb.spell] = { name = candidate, at = now }
-                        pending_cast = {
-                            store = entrust_last_cast,
-                            key = eb.spell,
-                            spell_id = spell.id,
-                            sent_at = now,
-                        }
-                        return
-                    end
-                end
-            end
-        end
-    end
-    -- PARTY BUFFS
-    if active_profile.party_buffs then
-        local me_zone = windower.ffxi.get_info().zone
-        local party = windower.ffxi.get_party()
-        for _, pb in ipairs(active_profile.party_buffs) do
-            local spell_name = pb.spell
-            local interval = (pb.interval or 6) * 60
-            local range = pb.range or 20
-            local targets = {}
-            if pb.targets == 'ALL_PLAYERS' then
-                if party then
-                    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
-                        local m = party[key]
-                        if m
-                            and m.name
-                            and m.mob
-                            and m.mob.id
-                            and m.zone == me_zone
-                            and not m.mob.is_npc
-                            and (pb.self or key ~= 'p0')
-                            and not Is_Haste_Blacklisted(m.name)
-                            and m.mob.distance
-                            and math.sqrt(m.mob.distance) <= range
-                        then
-                            targets[#targets + 1] = m.name
-                        end
-                    end
-                end
-            elseif type(pb.targets) == 'table' and pb.targets.jobs then
-                if party then
-                    for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
-                        local m = party[key]
-                        if m
-                            and m.name
-                            and m.mob
-                            and m.mob.id
-                            and m.zone == me_zone
-                            and not m.mob.is_npc
-                            and (pb.self or key ~= 'p0')
-                            and m.mob.distance
-                            and math.sqrt(m.mob.distance) <= range
-                        then
-                            for _, job in ipairs(pb.targets.jobs) do
-                                if Get_Party_Member_Job(m) == job then
-                                    targets[#targets + 1] = m.name
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            for _, tname in ipairs(targets) do
-                local cache_key = spell_name .. ':' .. tname
-                local last = party_buff_last_cast[cache_key]
-                if not last or now - last >= interval then
-                    local spell = res.spells:with('name', spell_name)
-                    if spell and Cast_Spell_On(spell_name, tname) then
-                        pending_cast = {
-                            store = party_buff_last_cast,
-                            key = cache_key,
-                            spell_id = spell.id,
-                            sent_at = now,
-                        }
-                        return
-                    end
-                end
-            end
-        end
-    end
+
+-- ENTRUST BUFFS
+if active_profile.entrust_buffs then
+local me_zone = windower.ffxi.get_info().zone
+local party = windower.ffxi.get_party()
+local earlier_target_exists = false  -- an earlier (higher priority) entry has a valid target
+for _, eb in ipairs(active_profile.entrust_buffs) do
+local interval = (eb.interval or 1) * 60
+local last = entrust_last_cast[eb.spell]
+local candidate = Find_Entrust_Target(eb, party, me_zone, now)
+local skip = eb.fallback and earlier_target_exists
+if candidate and not eb.fallback then earlier_target_exists = true end
+local ent = eb.ability or 'Entrust'
+if skip then
+Entrust_Debug(eb.spell .. ':skip', eb.spell .. ' skipped (fallback; a mage target exists)')
+elseif last and now - last < interval then
+Entrust_Debug(eb.spell .. ':cd', eb.spell .. ' on interval, ' .. math.ceil(interval - (now - last)) .. 's left')
+elseif not candidate then
+Entrust_Debug(eb.spell .. ':nt', 'no valid target in range for ' .. tostring(eb.spell) .. ' | party: ' .. Entrust_Party_Summary(party, me_zone))
+else
+local armed = Has_Buff_Named(ent)
+if not armed then
+local ok = Can_Cast_Ability(ent)
+Entrust_Debug(eb.spell .. ':ja', 'target ' .. candidate .. '; ' .. ent .. ' not active; Can_Cast_Ability=' .. tostring(ok) .. (ok and '' or (' (' .. Ability_Block_Reason(ent) .. ')')))
+if ok then
+Cast_Ability(ent)
+return
+end
+else
+local spell = res.spells:with('name', eb.spell)
+local ok = spell and Cast_Spell_On(eb.spell, candidate)
+Entrust_Debug(eb.spell .. ':sp', ent .. ' active; Cast_Spell_On(' .. eb.spell .. ', ' .. candidate .. ')=' .. tostring(ok and true or false) .. (spell and '' or ' (spell not in res)'))
+if ok then
+entrust_last_target[eb.spell] = { name = candidate, at = now }
+pending_cast = {
+store = entrust_last_cast,
+key = eb.spell,
+spell_id = spell.id,
+sent_at = now,
+}
+return
+end
+end
+end
+end
+end
+-- PARTY BUFFS
+if active_profile.party_buffs then
+local me_zone = windower.ffxi.get_info().zone
+local party = windower.ffxi.get_party()
+for _, pb in ipairs(active_profile.party_buffs) do
+local spell_name = pb.spell
+local interval = (pb.interval or 6) * 60
+local range = pb.range or 20
+local targets = {}
+if pb.targets == 'ALL_PLAYERS' then
+if party then
+for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+local m = party[key]
+if m
+and m.name
+and m.mob
+and m.mob.id
+and m.zone == me_zone
+and not m.mob.is_npc
+and (pb.self or key ~= 'p0')
+and not Is_Haste_Blacklisted(m.name)
+and m.mob.distance
+and math.sqrt(m.mob.distance) <= range
+then
+targets[#targets + 1] = m.name
+end
+end
+end
+elseif type(pb.targets) == 'table' and pb.targets.jobs then
+if party then
+for _, key in ipairs({'p0','p1','p2','p3','p4','p5'}) do
+local m = party[key]
+if m
+and m.name
+and m.mob
+and m.mob.id
+and m.zone == me_zone
+and not m.mob.is_npc
+and (pb.self or key ~= 'p0')
+and m.mob.distance
+and math.sqrt(m.mob.distance) <= range
+then
+for _, job in ipairs(pb.targets.jobs) do
+if Get_Party_Member_Job(m) == job then
+targets[#targets + 1] = m.name
+break
+end
+end
+end
+end
+end
+end
+for _, tname in ipairs(targets) do
+local cache_key = spell_name .. ':' .. tname
+local last = party_buff_last_cast[cache_key]
+if not last or now - last >= interval then
+local spell = res.spells:with('name', spell_name)
+if spell and Cast_Spell_On(spell_name, tname) then
+pending_cast = {
+store = party_buff_last_cast,
+key = cache_key,
+spell_id = spell.id,
+sent_at = now,
+}
+return
+end
+end
+end
+end
+end
 end
 function Buff_Monitor()
-    while Start_Engine do
-        Safe_Tick('Buff_Tick', Buff_Tick)
-        coroutine.sleep(1)
-    end
+while Start_Engine do
+Safe_Tick('Buff_Tick', Buff_Tick)
+coroutine.sleep(1)
+end
 end
