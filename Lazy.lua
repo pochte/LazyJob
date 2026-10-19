@@ -261,11 +261,7 @@ pending_cast = nil
 end
 elseif action.Category == 8 then
 isCasting = true
-cast_started_at = os.clock()
--- 28787 = cast interrupted (e.g. the bot walked while you were casting)
-if action['Target 1 Action 1 Message'] == 0
-or action.Param == 28787
-then
+if action['Target 1 Action 1 Message'] == 0 then
 isCasting = false
 isBusy = Action_Delay
 pending_cast = nil
@@ -633,17 +629,6 @@ local player = windower.ffxi.get_player()
 if player then
 Update_Job_Profile()
 buffactive = convert_buff_list(player.buffs or {})
--- Watchdog: isCasting is only cleared by a finish/interrupt packet. If one
--- is ever missed (manual cast interrupted while the bot moves), every buff,
--- debuff, cure and engage check stays blocked. No cast lasts this long.
-if isCasting
-and cast_started_at
-and (os.clock() - cast_started_at) > 15
-then
-isCasting = false
-cast_started_at = nil
-windower.add_to_chat(167, '[Lazy] Cast state was stuck -- reset.')
-end
 if isBusy < 1 then
 pcall(Combat)
 else
@@ -665,9 +650,7 @@ then
 local target = windower.ffxi.get_mob_by_target('t')
 if target and sc_ready and sc_ready(target.id) then
 local chain = Get_WS_Chain()
-local auto_partychain = ws_mode == 'chain'
-    and sc_was_interrupted and sc_was_interrupted(target.id)
-if chain and not auto_partychain then
+if chain then
 -- Ordered chain: step N has landed, so entry N + 1 is next.
 -- Past the last entry the chain is finished; the opener fires
 -- again once the window is gone.
@@ -678,7 +661,7 @@ windower.send_command('input /ws \"' .. nxt[1] .. '\" <t>')
 isBusy = Action_Delay
 dnc_flourish_pending = true
 end
-elseif ws_mode == 'party' or auto_partychain then
+elseif ws_mode == 'party' then
 -- Partychain: continue the open skillchain with the best weaponskill we
 -- can use right now, whoever started it. Nothing continues it: do nothing,
 -- the burst takes the end of the chain.

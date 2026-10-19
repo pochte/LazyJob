@@ -13,9 +13,9 @@ JOB_PROFILES.RDM = {
         { name = 'Enfire II', interval = 20 },
     },
     debuffs = {
-        { name = 'Dia III' },
-        { name = 'Inundation' },
-        { name = 'Distract III' },
+        'Dia III',
+        'Inundation',
+        'Distract III',
     },
     party_buffs = {
         {
