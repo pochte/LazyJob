@@ -9,7 +9,7 @@ local rest_started_at = 0
 -- RDM remains eligible, except when playing RDM/NIN.
 local REST_ELIGIBLE_JOBS = {
     WHM = true,
-    RDM = true,
+    RDM = false,
     BLM = true,
     GEO = true,
     SCH = true,
