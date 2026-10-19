@@ -17,6 +17,6 @@
         <target>rank eft</target>
     </baelfire>
     <ullona>
-        <autotarget>true</autotarget>
+        <assist>norrec</assist>
     </ullona>
 </settings>

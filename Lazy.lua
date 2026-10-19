@@ -753,7 +753,28 @@ if not player then return end
 local now = os.clock()
 Update_Job_Profile()
 -- 1. DEBUFF LOGIC (With require_no_pet & post-ability logic)
-if active_profile.debuffs then
+-- Debuff timers belong to the mob, not the session. Without this a new pull
+-- inside the interval (60s default) was never debuffed at all.
+do
+local cur_t = windower.ffxi.get_mob_by_target('t')
+if cur_t
+and cur_t.id
+and cur_t.is_npc
+and not Is_Party_Member(cur_t.id)
+and cur_t.id ~= debuff_target_id
+then
+debuff_target_id = cur_t.id
+-- Cleared in place: pending_cast.store points at this table.
+for k in pairs(debuff_last_cast) do
+debuff_last_cast[k] = nil
+end
+end
+end
+-- debuffs_engaged_only (profile flag): melee jobs get into the fight first
+-- and debuff once engaged, instead of casting while the pull is pending.
+if active_profile.debuffs
+and not (active_profile.debuffs_engaged_only and player.status ~= 1)
+then
 Ensure_Debuff_Target()
 local target = windower.ffxi.get_mob_by_target('t')
 local pet = windower.ffxi.get_mob_by_target('pet')

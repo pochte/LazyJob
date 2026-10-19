@@ -1,5 +1,6 @@
 JOB_PROFILES.RDM = {
     auto_engage = true,
+    debuffs_engaged_only = true,
     use_weaponskills = true,
     weaponskills = {
         primary_ws = 'Savage Blade',
