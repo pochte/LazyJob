@@ -1,7 +1,11 @@
 <?xml version="1.1" ?>
 <settings>
     <global>
+        <assist />
         <autotarget>false</autotarget>
+        <buffs_active>true</buffs_active>
+        <cure_active>true</cure_active>
+        <rest_active>true</rest_active>
         <spell>Sinker Drill</spell>
         <spell_active>false</spell_active>
         <target />
@@ -12,4 +16,7 @@
         <autotarget>true</autotarget>
         <target>rank eft</target>
     </baelfire>
+    <ullona>
+        <autotarget>true</autotarget>
+    </ullona>
 </settings>

@@ -582,6 +582,21 @@ end
 end
 return false
 end
+-- HOSTILE MONSTER CHECK
+-- True only for a real monster: not a PC, trust, NPC, party member or pet.
+-- (spawn_type 16 = monster; players/trusts/NPCs are other values.)
+function Is_Hostile_Mob(mob)
+if not mob or not mob.id then
+return false
+end
+if not mob.is_npc or mob.spawn_type ~= 16 then
+return false
+end
+if Is_Party_Member(mob.id) then
+return false
+end
+return true
+end
 -- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
 if not mob
@@ -1121,12 +1136,17 @@ end
 --     here; Target_Monitor releases it when combat actually ends.
 local ENGAGEMENT_SYNC_INTERVAL = 2
 local LOCK_LOST_GRACE = 4
+-- Never hand the fight to something farther than this (squared yalms).
+local HANDOFF_MAX_DIST_SQ = 30 * 30
+-- Ignore an attacker that hit us longer ago than this (seconds).
+local HANDOFF_ATTACKER_MAX_AGE = 10
 local function Is_Live_Enemy(mob)
 return mob
 and mob.id
 and mob.valid_target
 and type(mob.hpp) == 'number'
 and mob.hpp > 0
+and Is_Hostile_Mob(mob)
 end
 local function Can_Switch_To(mob, player)
 if not mob
@@ -1135,6 +1155,11 @@ or not Is_Live_Enemy(mob)
 or Is_Player_Pet(mob)
 or Is_Party_Member(mob.id)
 or Is_Unattackable(mob.id)
+then
+return false
+end
+if type(mob.distance) ~= 'number'
+or mob.distance > HANDOFF_MAX_DIST_SQ
 then
 return false
 end
@@ -1208,7 +1233,11 @@ return true
 end
 end
 end
-if last_damage_source_id and last_damage_source_id ~= current_id then
+if last_damage_source_id
+and last_damage_source_id ~= current_id
+and last_damage_taken_time
+and (os.clock() - last_damage_taken_time) <= HANDOFF_ATTACKER_MAX_AGE
+then
 local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
 if Can_Switch_To(attacker, player) then
 if Handoff_Combat_Lock(attacker, '[Lazy] Engaged target mismatch -- retargeting to ') then
@@ -1546,7 +1575,7 @@ coroutine.sleep(0.1)
 -- Preserve an active fight even if recovery started before this
 -- monitor adopted the target.
 elseif player and player.status == 1 then
-if target and target.id and not Is_Player_Pet(target) then
+if target and target.id and not Is_Player_Pet(target) and Is_Hostile_Mob(target) then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1599,7 +1628,7 @@ Debug.Target('CURRENT <t> IS PLAYER PET/LUPON - STOPPING ATTACK', target)
 windower.send_command('input /attack off')
 Clear_Combat_Target()
 windower.ffxi.follow(0)
-elseif target and target.id then
+elseif target and target.id and Is_Hostile_Mob(target) then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
