@@ -1193,6 +1193,31 @@ pending_target_time = 0
 windower.add_to_chat(2, message .. mob.name)
 return true
 end
+-- Pick the next target once the locked one is truly finished: the aggro
+-- queue first (oldest first), then the last thing that hit us. Handoff
+-- moves the lock to the new target; it never just clears it.
+-- (This definition went missing in the Oct 15 "fixes" commit while
+-- Engagement_Sync still called it, which killed that loop on the first
+-- lost target.)
+local function Recover_Combat_Target(player, current_id)
+while #aggro_queue > 0 do
+local candidate = windower.ffxi.get_mob_by_id(table.remove(aggro_queue, 1))
+if Can_Switch_To(candidate, player) then
+if Handoff_Combat_Lock(candidate, '[Lazy] Finishing that off, now dealing with: ') then
+return true
+end
+end
+end
+if last_damage_source_id and last_damage_source_id ~= current_id then
+local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
+if Can_Switch_To(attacker, player) then
+if Handoff_Combat_Lock(attacker, '[Lazy] Engaged target mismatch -- retargeting to ') then
+return true
+end
+end
+end
+return false
+end
 function Engagement_Sync()
 local lock_missing_since = nil
 while Start_Engine do
@@ -1302,12 +1327,21 @@ and true
 or false
 end
 if magic_burst_ok then
+-- (Try_Magic_Burst leaves the window to this job's own chain by itself.)
 if Try_Magic_Burst and Try_Magic_Burst() then return end
 if Try_Free_Nuke and Try_Free_Nuke() then return end
-if current_job == 'BLM'
-or current_job == 'GEO'
-or current_job == 'SCH'
-or current_job == 'NIN'
+-- Jobs that never melee (auto_engage = false: BLM, GEO, SCH) stop here.
+-- A melee job with magic burst (NIN) carries on to the weaponskill code
+-- below. It used to return here too, so NIN never opened a skillchain.
+if active_profile.auto_engage == false then
+return
+end
+-- A melee job (NIN) must not open a new chain on top of a window it is
+-- about to burst: the opener would replace the skillchain mid-cast.
+if Burst_Window_Open
+and Get_Burst_Spell
+and Burst_Window_Open(target)
+and Get_Burst_Spell(target)
 then
 return
 end

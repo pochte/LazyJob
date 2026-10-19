@@ -1,34 +1,32 @@
 -- MAGICBURST.LUA
 -- Shared magic burst and free nuke logic.
--- SKILLCHAIN ELEMENTS
-local SC_ELEMENTS = {
-	Radiance      = 'Light',
-	Umbra         = 'Darkness',
-	Light         = 'Light',
-	Darkness      = 'Darkness',
-	Gravitation   = 'Earth',
-	Fragmentation = 'Wind',
-	Distortion    = 'Ice',
-	Fusion        = 'Fire',
-	Compression   = 'Darkness',
-	Liquefaction  = 'Fire',
-	Induration    = 'Ice',
-	Reverberation = 'Water',
-	Transfixion   = 'Light',
-	Scission      = 'Earth',
-	Detonation    = 'Wind',
-	Impaction     = 'Lightning',
+-- ELEMENTAL ALIGNMENTS
+-- Which elements can burst each skillchain (bg-wiki, Magic Burst), in the
+-- order they are tried when the target has no weakness that fits. Light and
+-- Radiance prefer Wind, Darkness and Umbra prefer Dark (Comet, Impact).
+-- Override one in settings.lua: burst_elements = { Light = { 'Fire' } }
+local SC_BURST_ELEMENTS = {
+	Transfixion   = { 'Light' },
+	Compression   = { 'Dark' },
+	Liquefaction  = { 'Fire' },
+	Scission      = { 'Earth' },
+	Reverberation = { 'Water' },
+	Detonation    = { 'Wind' },
+	Induration    = { 'Ice' },
+	Impaction     = { 'Lightning' },
+	Fusion        = { 'Fire', 'Light' },
+	Fragmentation = { 'Wind', 'Lightning' },
+	Gravitation   = { 'Earth', 'Dark' },
+	Distortion    = { 'Ice', 'Water' },
+	Light         = { 'Wind', 'Lightning', 'Fire', 'Light' },
+	Radiance      = { 'Wind', 'Lightning', 'Fire', 'Light' },
+	Darkness      = { 'Dark', 'Ice', 'Water', 'Earth' },
+	Umbra         = { 'Dark', 'Ice', 'Water', 'Earth' },
 }
--- Translate skillchain elements into spell-family keys.
-local SC_FAMILY = {
-	Fire      = 'Fire',
-	Ice       = 'Blizzard',
-	Wind      = 'Aero',
-	Earth     = 'Stone',
-	Lightning = 'Thunder',
-	Water     = 'Water',
-	Light     = 'Light',
-	Darkness  = 'Darkness',
+-- Element -> the spell family name profiles use in burst_spells.
+local ELEMENT_FAMILY = {
+	Fire = 'Fire', Ice = 'Blizzard', Wind = 'Aero', Earth = 'Stone',
+	Lightning = 'Thunder', Water = 'Water', Light = 'Light', Dark = 'Darkness',
 }
 -- MP-limited burst settings.
 -- These jobs hold back MP for curing/buffs/etc:
@@ -58,16 +56,52 @@ local NIN_UNIVERSAL = { 'Shihei', 'Toolbag (Shihe)' }
 --   free  = free nukes between skillchains, if enabled for the job
 --   off   = disable automatic nuking
 nuke_mode = nuke_mode or 'burst'
--- Return the element for the target's current skillchain.
-function Get_SC_Element(target)
-	if not target or not sc_get_property then
+-- When to burst (burst_when in settings.lua):
+--   final = only at the END of a chain: a skillchain that can no longer be
+--           continued (Radiance / Umbra, or past the last step). Bursting
+--           mid-chain costs the chain its timing. This is the default.
+--   any   = burst any open skillchain window
+burst_when = burst_when or 'final'
+-- An open chain counts as ended once nobody has continued it for this many
+-- seconds (capped at 40% of the window). A closed chain needs no waiting.
+burst_quiet = burst_quiet or 2
+-- Do not start a burst with less than this much window left.
+burst_min_left = burst_min_left or 0.8
+-- Gap between burst casts, so fast casts can burst two or three times in
+-- one window without double-sending a command.
+burst_gap = burst_gap or 0.7
+local burst_gap_until = 0
+-- The skillchain property to burst right now, or nil.
+--   final: a closed chain right away; an open chain once nobody has
+--          continued it for burst_quiet seconds (that is the end of it).
+--   any:   any open window.
+function Burst_Window_Property(target)
+	if not target or not sc_burst_window then
 		return nil
 	end
-	local property = sc_get_property(target.id)
+	local property, final, left, since_go, length = sc_burst_window(target.id)
 	if not property then
 		return nil
 	end
-	return SC_ELEMENTS[property]
+	if left < burst_min_left then
+		return nil
+	end
+	if burst_when == 'any' or final then
+		return property
+	end
+	if since_go >= math.min(burst_quiet, length * 0.4) then
+		return property
+	end
+	return nil
+end
+function Burst_Window_Open(target)
+	return Burst_Window_Property(target) ~= nil
+end
+-- First element that bursts the target's current skillchain, or nil.
+function Get_SC_Element(target)
+	local property = Burst_Window_Property(target)
+	local elements = property and SC_BURST_ELEMENTS[property]
+	return elements and elements[1] or nil
 end
 -- Check if a spell is learned, available to the current job level,
 -- and not on recast.
@@ -171,6 +205,34 @@ end
 --   350 MP or less: no burst.
 -- Spells must be learned, available at the current level, off recast,
 -- affordable, and (ninjutsu) have the tools to cast.
+-- The spell families to try, in order, for this skillchain on this target:
+-- the target's weakness first when the skillchain can be burst with it,
+-- then the alignment order above.
+local function Burst_Families(property, target)
+	local elements = (burst_elements and burst_elements[property])
+		or SC_BURST_ELEMENTS[property]
+	if not elements then
+		return {}
+	end
+	local order, seen = {}, {}
+	local weak = Nuke_Family_For and Nuke_Family_For(target)
+	if weak then
+		for _, element in ipairs(elements) do
+			if ELEMENT_FAMILY[element] == weak and not seen[weak] then
+				seen[weak] = true
+				order[#order + 1] = weak
+			end
+		end
+	end
+	for _, element in ipairs(elements) do
+		local family = ELEMENT_FAMILY[element]
+		if family and not seen[family] then
+			seen[family] = true
+			order[#order + 1] = family
+		end
+	end
+	return order
+end
 function Get_Burst_Spell(target)
 	if nuke_mode == 'off' then
 		return nil
@@ -178,13 +240,8 @@ function Get_Burst_Spell(target)
 	if not target or not active_profile or not active_profile.burst_spells then
 		return nil
 	end
-	local element = Get_SC_Element(target)
-	if not element then
-		return nil
-	end
-	local family = SC_FAMILY[element] or element
-	local candidates = active_profile.burst_spells[family]
-	if not candidates then
+	local property = Burst_Window_Property(target)
+	if not property then
 		return nil
 	end
 	local player = windower.ffxi.get_player()
@@ -199,27 +256,55 @@ function Get_Burst_Spell(target)
 	local recasts = windower.ffxi.get_spell_recasts()
 	local known = windower.ffxi.get_spells()
 	local check_tools = active_profile.check_tools ~= false
-	-- Spell lists are ordered strongest first.
-	for _, spell_name in ipairs(candidates) do
-		local spell = res.spells:with('name', spell_name)
-		if spell
-			and Spell_Ready(spell, player, recasts, known)
-			and mp >= spell.mp_cost
-			and (not check_tools or Has_Ninja_Tools(spell_name))
-		then
-			if mp_limited and mp <= BURST_REDUCED_TIER_MP then
-				local tier = Get_Burst_Spell_Tier(spell_name)
-				if tier and tier <= 3 then
+	for _, family in ipairs(Burst_Families(property, target)) do
+		local candidates = active_profile.burst_spells[family]
+		-- Spell lists are ordered strongest first.
+		for _, spell_name in ipairs(candidates or {}) do
+			local spell = res.spells:with('name', spell_name)
+			if spell
+				and Spell_Ready(spell, player, recasts, known)
+				and mp >= spell.mp_cost
+				and (not check_tools or Has_Ninja_Tools(spell_name))
+			then
+				if mp_limited and mp <= BURST_REDUCED_TIER_MP then
+					local tier = Get_Burst_Spell_Tier(spell_name)
+					if tier and tier <= 3 then
+						return spell_name
+					end
+				else
 					return spell_name
 				end
-			else
-				return spell_name
 			end
 		end
 	end
 	return nil
 end
--- Cast the best available spell during a valid skillchain window.
+-- True while this job's own weaponskill chain still wants the open window:
+-- an ordered chain with a next step it can afford, or partychain with a
+-- weaponskill that continues the skillchain. The burst waits for it.
+function Chain_Wants_Window(target)
+	local player = windower.ffxi.get_player()
+	if not target or not player or not player.vitals or player.status ~= 1 then
+		return false
+	end
+	local tp = player.vitals.tp or 0
+	local chain = Get_WS_Chain and Get_WS_Chain()
+	if chain then
+		local step = sc_get_step and sc_get_step(target.id)
+		local next_step = step and chain[step + 1]
+		return (next_step and tp >= next_step[2]) and true or false
+	end
+	if ws_mode == 'party'
+		and active_profile
+		and active_profile.use_weaponskills
+		and sc_rank_ws
+		and tp >= 1000
+	then
+		local ranked = sc_rank_ws(target.id, Get_Party_Prefer and Get_Party_Prefer())
+		return ranked[1] ~= nil
+	end
+	return false
+end
 function Try_Magic_Burst()
 	if nuke_mode == 'off' then
 		return false
@@ -234,10 +319,16 @@ function Try_Magic_Burst()
 	if Is_Blacklisted(target.name) then
 		return false
 	end
-	if not sc_active(target.id) or not sc_ready(target.id) then
+	if not Burst_Window_Open(target) then
 		return false
 	end
-	if isCasting or isBusy > 0 or Is_Moving() then
+	-- A window is short, so action delay does not apply, but never overlap
+	-- a cast and leave burst_gap between casts.
+	if isCasting or Is_Moving() or os.clock() < burst_gap_until then
+		return false
+	end
+	-- This job's own chain keeps the window until it has finished.
+	if Chain_Wants_Window(target) then
 		return false
 	end
 	local spell_name = Get_Burst_Spell(target)
@@ -273,8 +364,28 @@ function Try_Magic_Burst()
 		end
 	end
 	windower.send_command('input /ma "' .. spell_name .. '" <t>')
-	isBusy = Action_Delay
+	burst_gap_until = os.clock() + burst_gap
+	-- Hold the other monitors off for a moment; the next burst does not
+	-- wait for it (Burst_Monitor below).
+	isBusy = 1
 	return true
+end
+-- Fast path. Combat only runs once a second, and every cast used to cost an
+-- Action_Delay, so one burst per window. With fast cast a window can take
+-- two or three, so while one is open this checks four times a second.
+function Burst_Monitor()
+	while Start_Engine do
+		local delay = 1
+		if active_profile and active_profile.magic_burst and nuke_mode ~= 'off' then
+			delay = 0.5
+			local target = windower.ffxi.get_mob_by_target('t')
+			if target and Burst_Window_Open(target) then
+				delay = 0.25
+				pcall(Try_Magic_Burst)
+			end
+		end
+		coroutine.sleep(delay)
+	end
 end
 -- FREE NUKE SETTINGS
 -- Free nukes are only available to profiles with free_nuke = true.
@@ -329,7 +440,7 @@ local function Nukeable(target, player)
 	return true
 end
 -- Find the spell family for the target's known elemental weakness.
-local function Nuke_Family_For(target)
+function Nuke_Family_For(target)
 	local list = (active_profile and active_profile.nuke_weakness)
 		or nuke_weakness
 		or {}
@@ -406,8 +517,8 @@ function Try_Free_Nuke()
 	if not Nukeable(target, player) then
 		return false
 	end
-	-- A skillchain window belongs to the burst.
-	if sc_active and sc_active(target.id) then
+	-- A window we could burst belongs to the burst.
+	if Burst_Window_Open(target) then
 		return false
 	end
 	-- Don't start a new pull while targeting is paused.

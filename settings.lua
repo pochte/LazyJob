@@ -11,6 +11,22 @@ ws_sc_starter = {'Savage Blade',}
 ws_sc_closers = {
     'Savage Blade',
 }
+-- MAGIC BURST TIMING
+-- 'final' (default): burst only at the END of a chain. A closed chain
+--   (Radiance / Umbra, or past the last step) can't be continued by anyone,
+--   so it is burst right away. An open one, Light included, counts as ended
+--   once nobody has continued it for burst_quiet seconds.
+-- 'any': burst any open window as soon as it opens.
+burst_when = 'final'
+burst_quiet = 2       -- seconds an open chain must sit untouched to count as ended
+burst_min_left = 0.8  -- don't start a burst with less window than this left
+burst_gap = 0.7       -- seconds between burst casts (fast cast can burst 2-3 times)
+-- Which elements burst which skillchain, tried in order (a weakness that
+-- fits goes first). The defaults follow bg-wiki; override one if you like:
+-- burst_elements = { Light = { 'Wind', 'Fire' }, Darkness = { 'Dark', 'Ice' } }
+-- PARTYCHAIN (//lazy partychain): when two weaponskills make the same level
+-- of skillchain, favour them in this order. Optional, a profile can set it.
+-- partychain_prefer = { 'Blade: Shun', 'Blade: Kamu' }
 -- FREE NUKE WEAKNESSES (BLM, SCH: //lazy freenuke)
 -- Which element a mob is weak to, so free nukes use the right spell. Matched
 -- as whole words in the mob's name, case-insensitive, first match wins. The

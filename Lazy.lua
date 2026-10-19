@@ -335,6 +335,7 @@ print('//lazy range <yalms>')
 print('//lazy burstmode   (BLM/SCH: nuke only during magic burst)')
 print('//lazy freenuke    (BLM/SCH: tier IV and lower on the target, V/VI for burst)')
 print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
+print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
 print('//lazy openmode    (opener + closers only)')
 print('//lazy retrust')
 print('//lazy join <name>   (same as them telling you the phrase)')
@@ -392,6 +393,14 @@ end
 -- JOB / TRUST INITIALIZATION
 Update_Job_Profile()
 Start_Rest_Monitor()
+-- Defaults only help people who know they exist, so say what they are.
+if active_profile and active_profile.use_weaponskills then
+windower.add_to_chat(207, '[Lazy] WS mode: ' .. Get_WS_Mode_Text() .. '  (//lazy chainmode, //lazy openmode, //lazy partychain)')
+end
+local start_nuke_text = Get_Nuke_Mode_Text and Get_Nuke_Mode_Text()
+if start_nuke_text then
+windower.add_to_chat(207, '[Lazy] Nuke mode: ' .. start_nuke_text .. '  (//lazy burstmode, //lazy freenuke)')
+end
 Snapshot_Trusts()
 coroutine.schedule(Engine, 0)
 coroutine.schedule(SC_Monitor, 0)
@@ -403,6 +412,7 @@ coroutine.schedule(Cure_Monitor, 0)
 coroutine.schedule(Trust_Monitor, 0)
 coroutine.schedule(Death_Monitor, 0)
 coroutine.schedule(Engagement_Sync, 0)
+coroutine.schedule(Burst_Monitor, 0)
 return
 end
 if command == 'stop' then
@@ -554,6 +564,11 @@ Update_Job_Profile()
 Set_Nuke_Mode('free')
 return
 end
+if command == 'partychain' then
+Update_Job_Profile()
+Set_WS_Mode('party')
+return
+end
 if command == 'chainmode' then
 Update_Job_Profile()
 Set_WS_Mode('chain')
@@ -634,7 +649,9 @@ then
 local target = windower.ffxi.get_mob_by_target('t')
 if target and sc_ready and sc_ready(target.id) then
 local chain = Get_WS_Chain()
-if chain then
+local auto_partychain = ws_mode == 'chain'
+    and sc_was_interrupted and sc_was_interrupted(target.id)
+if chain and not auto_partychain then
 -- Ordered chain: step N has landed, so entry N + 1 is next.
 -- Past the last entry the chain is finished; the opener fires
 -- again once the window is gone.
@@ -642,6 +659,17 @@ local step = sc_get_step and sc_get_step(target.id)
 local nxt = step and chain[step + 1]
 if nxt and player.vitals.tp >= nxt[2] then
 windower.send_command('input /ws \"' .. nxt[1] .. '\" <t>')
+isBusy = Action_Delay
+dnc_flourish_pending = true
+end
+elseif ws_mode == 'party' or auto_partychain then
+-- Partychain: continue the open skillchain with the best weaponskill we
+-- can use right now, whoever started it. Nothing continues it: do nothing,
+-- the burst takes the end of the chain.
+local ranked = sc_rank_ws and sc_rank_ws(target.id, Get_Party_Prefer()) or {}
+local best = ranked[1]
+if best and active_profile and active_profile.use_weaponskills ~= false then
+windower.send_command('input /ws \"' .. best.name .. '\" <t>')
 isBusy = Action_Delay
 dnc_flourish_pending = true
 end

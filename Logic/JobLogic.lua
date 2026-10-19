@@ -8,10 +8,12 @@ function Safe_Tick(name, fn)
     end
 end
 -- PROFILE HELPERS
--- WEAPONSKILL MODE (//lazy chainmode, //lazy openmode)
+-- WEAPONSKILL MODE (//lazy chainmode, //lazy openmode, //lazy partychain)
 --   chain: fire the ordered ws_sc_chain (up to 5 steps) when one exists.
 --   open:  opener + closers only: ws_sc_starter / ws_sc_closers, where the
 --          closer is whichever one continues the open skillchain.
+--   party: opener, then continue whatever skillchain is open with the best
+--          weaponskill you can use right now, whoever started it.
 ws_mode = ws_mode or 'chain'
 -- Ordered skillchain, up to 5 weaponskills: ws_sc_chain = { 'WS1', 'WS2',
 -- 'WS3', 'WS4', 'WS5' }. An entry is a name, or { name, min_tp } (default
@@ -39,10 +41,24 @@ local function Raw_WS_Chain()
 end
 -- { {name, min_tp}, ... } while in chain mode and a chain exists, else nil.
 function Get_WS_Chain()
-    if ws_mode == 'open' then
+    if ws_mode ~= 'chain' then
         return nil
     end
     return Raw_WS_Chain()
+end
+-- { [weaponskill name] = position } from partychain_prefer, a list of names
+-- in the order to favour when two weaponskills would make the same level of
+-- skillchain. Profile first, then settings.lua.
+function Get_Party_Prefer()
+    local list = (active_profile and active_profile.partychain_prefer) or partychain_prefer
+    if type(list) ~= 'table' then
+        return nil
+    end
+    local map = {}
+    for i, name in ipairs(list) do
+        map[name] = i
+    end
+    return map
 end
 -- A profile that only defines a chain (no ws_sc_starter / ws_sc_closers of
 -- its own) still has to do something in open mode: use the chain's first
@@ -98,6 +114,18 @@ function Set_WS_Mode(mode)
         )
         return
     end
+    if mode == 'party' then
+        ws_mode = 'party'
+        local starter = Get_WS_Starter()
+        windower.add_to_chat(
+            2,
+            '[Lazy] WS mode: PARTYCHAIN. Opens with ' ..
+            tostring(starter and starter[1]) ..
+            ', then continues any open skillchain with the best weaponskill ' ..
+            'you have: highest skillchain level first.'
+        )
+        return
+    end
     ws_mode = 'open'
     local starter = Get_WS_Starter()
     windower.add_to_chat(
@@ -112,6 +140,10 @@ function Get_WS_Mode_Text()
         return 'chain (' .. #chain .. ' steps: ' .. WS_Names(chain) .. ')'
     end
     local starter = Get_WS_Starter()
+    if ws_mode == 'party' then
+        return 'partychain (opener ' .. tostring(starter and starter[1]) ..
+            ', then the best weaponskill that continues the chain)'
+    end
     return 'open (opener ' .. tostring(starter and starter[1]) ..
         ', closers ' .. WS_Names(Get_WS_Closers()) .. ')' ..
         ((ws_mode == 'chain') and ' [no chain defined]' or '')

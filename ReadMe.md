@@ -65,6 +65,7 @@ data/settings.xml   per-character settings, written by //lazy save
 * //lazy freenuke
 * //lazy chainmode
 * //lazy openmode
+* //lazy partychain
 * //lazy retrust
 * //lazy join \<name\>
 * //lazy join cancel
@@ -78,8 +79,10 @@ profile, snapshots your Trusts, and starts everything. It also clears any
 leftover target and combat state from an earlier run. If you haven't picked a
 mode (no `//lazy follower <player>` target and autotarget is off) it defaults
 to leader mode, i.e. autotarget on. Running it again while Lazy is already
-running does nothing. It refuses to start while you are dead. If you die while
-it is running, Lazy tells you what killed you and stops.
+running does nothing. It prints the weaponskill mode and nuke mode in use, so
+the defaults are visible (see [Defaults](#defaults)). It refuses to start
+while you are dead. If you die while it is running, Lazy tells you what
+killed you and stops.
 
 #### //lazy stop
 Stops the helper. Your settings are kept.
@@ -193,6 +196,13 @@ own) uses the chain's first two entries as the opener and closer.
 The mode lasts for the session and starts in chain mode, so a profile with a
 `ws_sc_chain` uses it until you run `//lazy openmode`.
 
+#### //lazy partychain
+Weaponskill mode for chaining with a party. Lazy opens with the profile's
+`ws_sc_starter`, then continues whatever skillchain is open, whoever started
+it, with the best weaponskill it can use right now (see
+[Skillchains](#skillchains)). When nothing continues it, Lazy does nothing and
+the burst takes the end of the chain.
+
 #### //lazy retrust
 Lazy snapshots which party slots are Trusts when you `//lazy start`, and
 resummons any of them that die for the rest of the session (player
@@ -216,6 +226,20 @@ same as doing it from the party menu.
 
 #### //lazy sync off
 Turns level sync off (the cap lifts after about 30 seconds).
+
+### Defaults
+Nothing needs setting before `//lazy start`; these are what you get:
+
+* **Targeting:** leader mode (autotarget on) when no assist is set.
+* **Weaponskills:** chain mode. A profile with a `ws_sc_chain` fires it; a
+  profile without one uses normal weaponskills (its `ws_sc_starter` and
+  `ws_sc_closers`). `//lazy openmode` forces the normal ones.
+* **Nuking (BLM and SCH):** burst only. Free nuke stays off until you run
+  `//lazy freenuke`.
+* **Magic burst:** only at the end of a chain, see
+  [Magic burst timing](#magic-burst-timing).
+
+Lazy prints the weaponskill and nuke modes when it starts.
 
 ### Party join
 For when a bot disconnects, or a player wants to join later: the person logs
@@ -260,11 +284,69 @@ By default anyone who knows the phrase can use it, so put names in
 the party list (`Yoran-Oran`, not `Yoran-Oran (UC)`); the game has no job
 data for trusts, so `trust_jobs` is hardcoded.
 
+### Magic burst timing
+Every job with magic burst (BLM, SCH, GEO, RDM, WHM, and NIN when its profile
+has `magic_burst`) bursts at the **end of a chain**, not in the middle of
+one. A burst cast mid-chain eats the window the next weaponskill needs and
+gives up the bigger bonus a longer chain earns.
+
+* **Closed chain** (level 4, Radiance or Umbra, or past the last step):
+  nobody can continue it, so it is burst right away.
+* **Open chain** (Light, Darkness, Fusion, anything that can still be
+  continued): burst once nobody has continued it for `burst_quiet` seconds
+  (default 2). If someone does continue it in that time, Lazy waits for the
+  next window.
+* A job's own chain keeps the window while it still has something to fire: an
+  ordered chain with an affordable next step, or partychain with a weaponskill
+  that continues the skillchain.
+* `burst_when = 'any'` bursts any open window as soon as it opens.
+
+**Which element.** Lazy follows bg-wiki's Elemental Alignments. For a given
+skillchain it tries, in order: the mob's weakness (from `nuke_weakness`) if
+that element can burst this skillchain, then the default order.
+
+| Skillchain | Elements that burst it (default order) |
+| --- | --- |
+| Light, Radiance | Wind, Lightning, Fire, Light |
+| Darkness, Umbra | Dark, Ice, Water, Earth |
+| Fusion | Fire, Light |
+| Fragmentation | Wind, Lightning |
+| Gravitation | Earth, Dark |
+| Distortion | Ice, Water |
+| Transfixion / Compression / Liquefaction / Scission / Reverberation / Detonation / Induration / Impaction | Light / Dark / Fire / Earth / Water / Wind / Ice / Lightning |
+
+Dark is Comet on BLM and Impact on RDM, SCH and GEO; Light is Holy II then
+Holy on WHM; all set by each profile's `burst_spells`. Change the order for a
+skillchain with `burst_elements` in `settings.lua`.
+
+**Burst as often as the window allows.** While a window is open Lazy checks
+four times a second and casts again as soon as the last cast has finished
+(`burst_gap`, 0.7 seconds apart), so fast cast can burst two or three times in
+one window. It won't start a cast with less than `burst_min_left` seconds of
+window left.
+
+In `settings.lua`:
+```lua
+burst_when = 'final'   -- default: the end of a chain; 'any' = any open window
+burst_quiet = 2        -- seconds an open chain must sit untouched to have ended
+burst_min_left = 0.8
+burst_gap = 0.7
+-- burst_elements = { Light = { 'Wind', 'Fire' } }
+```
+Things to know:
+* A job only bursts an element it has spells for: the stock BLM, SCH, GEO, RDM
+  and WHM profiles cover everything above except that WHM only has Light.
+* A melee job that bursts (NIN) does not open a new chain on top of a window
+  it is about to burst.
+* Casting is not blocked by action delay while a window is open, but a cast
+  never overlaps another.
+
 ### Free nuke (BLM and SCH)
 BLM and SCH have two nuke modes, switched with `//lazy burstmode` and
 `//lazy freenuke`:
 
-* **Burst mode** (default): nuke only during a skillchain window, using the
+* **Burst mode** (default): nuke only when a window can be burst (the end of
+  a chain, see [Magic burst timing](#magic-burst-timing)), using the
   profile's `burst_spells`, highest tier first.
 * **Free nuke**: bursts work the same, and in between Lazy nukes the target
   with tier IV and lower (`free_nuke_max_tier`, default 4), trying IV, then
@@ -344,6 +426,18 @@ Both can live in a job profile (`profiles/<JOB>.lua`) or as defaults in
 `settings.lua`. A profile's own values win, and a profile can define a chain
 and starter/closers together so both modes do something different.
 
+**Partychain** (`//lazy partychain`): the opener is the profile's
+`ws_sc_starter` (or the first entry of its chain). After that, whenever a
+skillchain is open, Lazy looks at the weaponskills the character can use right
+now, works out which skillchain each one would make from the open chain's
+properties, and fires the one that makes the **highest level**. Ties go to the
+order of `partychain_prefer` (a list of weaponskill names, in a profile or
+`settings.lua`), then alphabetically. It looks one step ahead only: it does
+not plan a route to Radiance, and it does not know what other players will use
+next. If nothing continues the chain it does nothing, and the burst takes the
+end. Steps count whoever landed them, and it needs 1000 TP like any other
+step.
+
 ### Job profiles
 Lazy is main-job aware: it detects your current main job and switches
 behavior profiles (`//lazy show` prints which one is active). Each profile is
@@ -361,7 +455,7 @@ Currently defined:
 | Job | What its profile does |
 | --- | --- |
 | RDM | Melee. Self buffs (Haste II, Temper II, Gain-STR, Enfire II), debuffs, party Haste II and Refresh III, Composure/Saboteur, Dispel, magic burst, emergency cures |
-| WHM | Cure bot, Protectra/Shellra/Auspice and other self buffs. No melee |
+| WHM | Cure bot, Protectra/Shellra/Auspice and other self buffs, bursts Light with Holy II and Holy. No melee |
 | BLM | Magic burst (Tier VI cap) and free nuke (`//lazy freenuke`, tier IV and lower). No melee |
 | SCH | Magic burst and free nuke (`//lazy freenuke`), plus the cure bot when there is no WHM in the party |
 | GEO | Indi-Fury, Luopan abilities (Radial Arcana, Dematerialize, Life Cycle), Entrust (Indi-Refresh on a mage; Indi-Haste on the party leader when they are the only other player and their job can't be read; otherwise Indi-Frailty), Geo-Frailty, magic burst |
@@ -418,7 +512,9 @@ Shared configuration, edited by hand and reloaded with `//lazy reload`:
 weaponskill fallbacks (`ws_sc_starter`, `ws_sc_closers`, optional
 `ws_sc_chain`), `spell_blacklist` (mobs never to cast the configured spell
 on), `dispel_whitelist` (mobs Lazy may Dispel/Finale), `haste_blacklist`
-(players who never get Haste II), `nuke_weakness` / `nuke_default` (free nuke),
+(players who never get Haste II), `burst_when`, `burst_quiet`, `burst_min_left`, `burst_gap`, `burst_elements` (magic burst),
+`partychain_prefer` (partychain tie-breaks),
+`nuke_weakness` / `nuke_default` (free nuke),
 `party_join`, `trust_jobs` and
 `trust_sacrifice_order` (see [Party join](#party-join)), `targeting`
 (`monsters` list, `only_unclaimed`, `only_alive`, `within_origin`),

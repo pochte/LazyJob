@@ -1,4 +1,4 @@
--- THF JOB PROFILE 
+-- THF JOB PROFILE
 JOB_PROFILES.THF = {
 	auto_engage = true,
 	use_weaponskills = true,
@@ -17,6 +17,12 @@ JOB_PROFILES.THF = {
 	},
 	ws_sc_closers = {
 		"Rudra's Storm",
+	},
+
+	ws_sc_chain = {
+		{ "Rudra's Storm", 1000 },
+		{ 'Evisceration', 1000 },
+		{ "Rudra's Storm", 1000 },
 	},
 	food = 'Soy Ramen',
 }

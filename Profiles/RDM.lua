@@ -41,7 +41,7 @@ JOB_PROFILES.RDM = {
         spell = 'Dispel',
         interval = 20,        
     },
-    magic_burst = false,
+    magic_burst = true,
     burst_spells = {
         Aero = { 'Aero V', 'Aero IV', 'Aero III' },
         Fire = { 'Fire V', 'Fire IV', 'Fire III' },

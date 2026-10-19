@@ -34,6 +34,6 @@ JOB_PROFILES.SCH = {
 		Stone    = { 'Stone V', 'Stone IV', 'Stone III' },
 		Thunder  = { 'Thunder V', 'Thunder IV', 'Thunder III' },
 		Water    = { 'Water V', 'Water IV', 'Water III' },
-		Darkness = { 'Blizzard V', 'Blizzard IV', 'Blizzard III' },
+		Darkness = { 'Impact' },
 	},
 }

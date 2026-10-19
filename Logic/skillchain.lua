@@ -152,7 +152,10 @@ local ws_categories = {
 --     times  = timestamp,
 --     step   = number,
 --     closed = boolean,
--- } 
+--     self_chain = boolean, -- this chain was opened by the local player
+--     interrupted = boolean, -- another actor interrupted our chain
+--     last_actor_id = number,
+-- }
 local resonating = {}
 -- CHECK WHETHER TWO SETS OF SC PROPERTIES
 -- CAN COMBINE 
@@ -183,20 +186,46 @@ local function apply_properties(
     active,
     delay,
     step,
-    closed
+    closed,
+    actor_id
 )
     local clock = os.clock()
+    local previous = resonating[target]
+    local player = windower.ffxi.get_player()
+    local is_self = player and actor_id == player.id or false
+    local previous_is_open = previous
+        and not previous.closed
+        and clock <= previous.times
+    local self_chain
+    if previous_is_open then
+        self_chain = previous.self_chain
+    else
+        self_chain = is_self
+    end
+    local interrupted = previous_is_open
+        and (previous.interrupted
+            or (previous.self_chain and not is_self))
+        or false
     resonating[target] = {
         active = active,
-        delay =
-            clock + delay,
-        times =
-            clock + delay + 8 - step,
-        step =
-            step,
-        closed =
-            closed or false,
+        delay = clock + delay,
+        times = clock + delay + 8 - step,
+        step = step,
+        closed = closed or false,
+        self_chain = self_chain and true or false,
+        interrupted = interrupted and true or false,
+        last_actor_id = actor_id,
     }
+end
+-- TRUE when another actor has interrupted a chain originally opened by us.
+-- The flag survives our own follow-up WS so partychain can keep improvising
+-- until the chain closes or expires.
+function sc_was_interrupted(target_id)
+    local reson = resonating[target_id]
+    if not reson or os.clock() > reson.times then
+        return false
+    end
+    return reson.interrupted or false
 end
 -- TRUE WHEN SC WINDOW EXISTS
 --
@@ -210,9 +239,10 @@ function sc_active(target_id)
     if not reson then
         return false
     end
+    -- A closed chain cannot be continued, so it is not 'active' for
+    -- weaponskill logic. It stays in the table so it can still be burst
+    -- (see sc_burst_window) until its window runs out.
     if reson.closed then
-        resonating[target_id] =
-            nil
         return false
     end
     local now =
@@ -232,9 +262,10 @@ function sc_ready(target_id)
     if not reson then
         return false
     end
+    -- A closed chain cannot be continued, so it is not 'active' for
+    -- weaponskill logic. It stays in the table so it can still be burst
+    -- (see sc_burst_window) until its window runs out.
     if reson.closed then
-        resonating[target_id] =
-            nil
         return false
     end
     local now =
@@ -258,9 +289,10 @@ function sc_get_step(target_id)
     if not reson then
         return nil
     end
+    -- A closed chain cannot be continued, so it is not 'active' for
+    -- weaponskill logic. It stays in the table so it can still be burst
+    -- (see sc_burst_window) until its window runs out.
     if reson.closed then
-        resonating[target_id] =
-            nil
         return nil
     end
     if os.clock() > reson.times then
@@ -290,9 +322,10 @@ function sc_get_property(target_id)
     if not reson then
         return nil
     end
+    -- A closed chain cannot be continued, so it is not 'active' for
+    -- weaponskill logic. It stays in the table so it can still be burst
+    -- (see sc_burst_window) until its window runs out.
     if reson.closed then
-        resonating[target_id] =
-            nil
         return nil
     end
     local now =
@@ -306,6 +339,43 @@ function sc_get_property(target_id)
         return nil
     end
     return reson.active[1]
+end
+-- GET THE BURST WINDOW
+--
+-- A skillchain can stop being continuable: level 4 (Radiance / Umbra) or
+-- past the last step. It has nothing left to close, but it can still be
+-- magic burst for the same few seconds. sc_active / sc_ready report such a
+-- chain as finished so weaponskill logic stops chaining; this one does not.
+--
+-- Returns  property, final, left, since_go, length
+--   property  the skillchain property to burst, once "Go!" has started
+--   final     true when the chain cannot be continued (end of a chain)
+--   left      seconds of window remaining
+--   since_go  seconds since "Go!" started (nobody has continued it since)
+--   length    seconds the "Go!" phase lasts in total
+-- or nil when there is no burstable window.
+function sc_burst_window(target_id)
+    local reson =
+        resonating[target_id]
+    if not reson then
+        return nil
+    end
+    local now =
+        os.clock()
+    if now > reson.times then
+        resonating[target_id] =
+            nil
+        return nil
+    end
+    if now < reson.delay
+        or not reson.active then
+        return nil
+    end
+    return reson.active[1],
+        reson.closed and true or false,
+        reson.times - now,
+        now - reson.delay,
+        reson.times - reson.delay
 end
 -- GET MAIN WEAPON NAME 
 local function get_main_weapon_name()
@@ -394,6 +464,63 @@ function sc_get_ws(target_id)
     end
     return result
 end
+-- RANK THE WS THAT CAN CONTINUE THE CURRENT SKILLCHAIN
+--
+-- Same candidates as sc_get_ws (the weaponskills you can use right now,
+-- with your weapon's aeonic property), but each one carries the skillchain
+-- it would make. Best first: highest skillchain level, then the position in
+-- `prefer` (a { [name] = position } table, optional), then name.
+-- Returns { { name =, level =, result = }, ... }, empty when the chain is
+-- closed, over, or nothing continues it.
+function sc_rank_ws(target_id, prefer)
+    local reson =
+        resonating[target_id]
+    if not reson
+        or reson.closed
+        or os.clock() > reson.times then
+        return {}
+    end
+    local ws_ids =
+        windower.ffxi.get_abilities().weapon_skills
+    local main_name =
+        get_main_weapon_name()
+    local result = {}
+    for k = 1, #ws_ids do
+        local skill =
+            skills.weapon_skills[ws_ids[k]]
+        if skill then
+            local props =
+                get_sc_props(
+                    skill,
+                    main_name
+                )
+            local lv, prop =
+                check_props(
+                    reson.active,
+                    props
+                )
+            if prop then
+                result[#result + 1] = {
+                    name = skill.en,
+                    level = lv,
+                    result = prop,
+                }
+            end
+        end
+    end
+    table.sort(result, function(a, b)
+        if a.level ~= b.level then
+            return a.level > b.level
+        end
+        local pa = prefer and prefer[a.name] or 1000
+        local pb = prefer and prefer[b.name] or 1000
+        if pa ~= pb then
+            return pa < pb
+        end
+        return a.name < b.name
+    end)
+    return result
+end
 -- ACTION PACKET HANDLER 
 local function action_handler(act)
     local ap =
@@ -456,7 +583,8 @@ local function action_handler(act)
             {sc_name},
             delay,
             step,
-            closed
+            closed,
+            act.actor_id
         )
        -- INITIAL WEAPONSKILL / ABILITY
     elseif ability
@@ -476,7 +604,8 @@ local function action_handler(act)
             props,
             ability.delay or 3,
             1,
-            false
+            false,
+            act.actor_id
         )
     end
 end

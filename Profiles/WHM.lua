@@ -26,4 +26,11 @@ JOB_PROFILES.WHM = {
 	},
 
 	job_abilities = {},
+
+	-- MAGIC BURST
+	-- Holy and Holy II burst Light, Radiance, Fusion and Transfixion.
+	magic_burst = true,
+	burst_spells = {
+		Light = { 'Holy II', 'Holy' },
+	},
 }
