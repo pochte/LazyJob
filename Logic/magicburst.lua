@@ -514,7 +514,20 @@ function Try_Free_Nuke()
 		return false
 	end
 	local target = windower.ffxi.get_mob_by_target('t')
+	-- Entrust/support casts can leave a party member selected. If the
+	-- remembered combat enemy is still a valid nuke target, restore it now;
+	-- let the next Combat tick cast only after <t> is the enemy again.
 	if not Nukeable(target, player) then
+		local remembered_id = support_return_target_id or combat_locked_target_id or managed_target_id or last_enemy_target_id
+		local remembered = remembered_id
+			and windower.ffxi.get_mob_by_id(remembered_id)
+		if remembered
+			and remembered.id ~= (target and target.id)
+			and Nukeable(remembered, player)
+			and Select_Target
+		then
+			Select_Target(remembered)
+		end
 		return false
 	end
 	-- A window we could burst belongs to the burst.

@@ -7,6 +7,12 @@ JOB_PROFILES.GEO = {
     self_buffs = {
         { name = 'Indi-Fury', interval = 3 },
     },
+    
+	-- FREE NUKE (//lazy freenuke). Tier IV and lower are cast on the target
+	-- between bursts; V and VI are saved for magic burst.
+	free_nuke = true,
+	free_nuke_max_tier = 3,
+	free_nuke_weather = true, -- failsafe: cast the matching Storm if the weather is wrong
     self_abilities = {
         -- Restores MP using Luopan when player MP drops below 50%
         { 
@@ -15,7 +21,7 @@ JOB_PROFILES.GEO = {
             require_pet = true, 
             max_mp_percent = 50, 
             min_pet_hpp = 20 
-        },
+        }, 
         -- Grants Luopan temporary invulnerability when HP drops below 30%
         { 
             name = 'Dematerialize', 
@@ -56,17 +62,20 @@ JOB_PROFILES.GEO = {
             interval = 1,
         },
     },
-       -- TARGET DEBUFFS
-    debuffs = {
-        { 
-            name = 'Geo-Frailty', 
-            target = '<bt>',
-            interval = 3,
-            require_no_pet = true,                 -- Avoids recasting if Luopan is currently active
-            use_ability_before = 'Blaze of Glory', -- Pops BoG before summoning Luopan
-            use_ability_after  = 'Ecliptic Attrition', -- Pops Ecliptic Attrition right after Luopan is summoned
-        },
+-- TARGET DEBUFFS
+debuffs = {
+    {
+        name = 'Geo-Frailty',
+        target = '<bt>',
+        interval = 1,
+        require_no_pet = true,
+        recast_if_no_pet = true,
+        use_ability_before = 'Blaze of Glory',
+        use_ability_after = 'Ecliptic Attrition',
     },
+},
+
+    
        -- MAGIC BURST
     magic_burst = true,
     burst_spells = {

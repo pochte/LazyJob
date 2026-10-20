@@ -231,8 +231,6 @@ assist = '',
 buffs_active = true,
 cure_active = true,
 rest_active = true,
--- Comma-separated names allowed to use party-chat commands (empty = everyone).
-trusted_players = '',
 }
 settings = config.load(defaults)
 -- LOAD SHARED LOGIC MODULES
@@ -245,7 +243,6 @@ settings = config.load(defaults)
 dofile(windower.addon_path .. 'debug/Debug.lua')
 dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
 dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
-dofile(windower.addon_path .. 'Logic/PartyCommands.lua')
 -- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
 if id ~= 0x028 then return end
@@ -267,10 +264,6 @@ isCasting = true
 if action['Target 1 Action 1 Message'] == 0 then
 isCasting = false
 isBusy = Action_Delay
--- Interrupted debuff: forget the send-time mark so it is retried.
-if pending_cast and pending_cast.store == debuff_last_cast then
-debuff_last_cast[pending_cast.key] = nil
-end
 pending_cast = nil
 end
 elseif action.Category == 11 then
@@ -282,8 +275,12 @@ end)
 -- last_damage_kind) and the aggro queue are OWNED by TargetLogic.lua.
 -- They are globals; Death_Monitor only reads them to report a cause.
 local death_reported = false
-local death_rez_until = nil
-local function Report_Death_And_Stop()
+function Death_Monitor()
+while Start_Engine do
+local player = windower.ffxi.get_player()
+if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
+if not death_reported then
+death_reported = true
 local cause = last_damage_source or 'unknown causes'
 if last_damage_kind then
 cause = cause .. ' (' .. last_damage_kind .. ')'
@@ -296,31 +293,8 @@ windower.add_to_chat(
 )
 Start_Engine = false
 end
-function Death_Monitor()
-while Start_Engine do
-local player = windower.ffxi.get_player()
-if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
-if not death_reported then
-death_reported = true
--- Ask the party for a rez first (PartyCommands.lua). Only when nobody
--- can answer does Lazy stop, as it always did.
-if Party_Death_Begin and Party_Death_Begin() then
-death_rez_until = os.clock() + ((Party_Rez_Timeout and Party_Rez_Timeout()) or 180)
-windower.add_to_chat(167, '[Lazy] You died -- asked the party for a rez, waiting...')
 else
-Report_Death_And_Stop()
-end
-elseif death_rez_until and os.clock() > death_rez_until then
-death_rez_until = nil
-windower.add_to_chat(167, '[Lazy] No rez arrived.')
-Report_Death_And_Stop()
-end
-else
-if death_reported and death_rez_until then
-windower.add_to_chat(2, '[Lazy] Raised! Waiting for weakness to wear off.')
-end
 death_reported = false
-death_rez_until = nil
 end
 coroutine.sleep(0.5)
 end
@@ -364,11 +338,10 @@ print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
 print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
 print('//lazy openmode    (opener + closers only)')
 print('//lazy retrust')
-if Party_Command_Help then Party_Command_Help() end
-return
-end
--- Party commands (//lazy join, //lazy sync, ...) live in Logic/PartyCommands.lua.
-if Party_Command and Party_Command(command, args, raw_args) then
+print('//lazy join <name>   (same as them telling you the phrase)')
+print('//lazy join cancel')
+print('//lazy sync <name>   (level sync to that party member)')
+print('//lazy sync off')
 return
 end
 if command == 'start' then
@@ -429,9 +402,6 @@ if start_nuke_text then
 windower.add_to_chat(207, '[Lazy] Nuke mode: ' .. start_nuke_text .. '  (//lazy burstmode, //lazy freenuke)')
 end
 Snapshot_Trusts()
-if Party_Start then
-Party_Start()
-end
 coroutine.schedule(Engine, 0)
 coroutine.schedule(SC_Monitor, 0)
 coroutine.schedule(Target_Monitor, 0)
@@ -442,9 +412,6 @@ coroutine.schedule(Cure_Monitor, 0)
 coroutine.schedule(Trust_Monitor, 0)
 coroutine.schedule(Death_Monitor, 0)
 coroutine.schedule(Engagement_Sync, 0)
-if Party_Monitor then
-coroutine.schedule(Party_Monitor, 0)
-end
 coroutine.schedule(Burst_Monitor, 0)
 return
 end
@@ -612,6 +579,30 @@ Update_Job_Profile()
 Set_WS_Mode('open')
 return
 end
+if command == 'join' then
+if args[2] == 'cancel' then
+Party_Join_Cancel()
+return
+end
+if not raw_args[2] then
+print('//lazy join <name>  |  //lazy join cancel')
+return
+end
+Party_Join_Begin(raw_args[2])
+return
+end
+if command == 'sync' then
+if args[2] == 'off' then
+Clear_Level_Sync()
+return
+end
+if not raw_args[2] then
+print('//lazy sync <name>  |  //lazy sync off')
+return
+end
+Set_Level_Sync(raw_args[2])
+return
+end
 end)
 -- WEAPONSKILLS
 function Next_WS()
@@ -777,7 +768,12 @@ local pet_ok = true
 if debuff.require_no_pet and pet then
 pet_ok = false
 end
-if pet_ok and (not last or now - last >= interval) then
+-- GEO failsafe: if the profile marks a Luopan-creating geomancy spell
+-- for pet recovery, a missing pet overrides the normal per-spell timer.
+-- A living pet still blocks this path via require_no_pet above.
+local pet_recovery_due = debuff.recast_if_no_pet and not pet
+local debuff_due = pet_recovery_due or not last or now - last >= interval
+if pet_ok and debuff_due then
 -- Pre-ability check (e.g., Blaze of Glory)
 if debuff.use_ability_before
 and Can_Cast_Ability(debuff.use_ability_before)

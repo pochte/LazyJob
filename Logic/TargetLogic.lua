@@ -21,8 +21,7 @@
 -- acquisition, new engagements and approaching; never touches an
 -- established combat lock.
 function Targeting_Paused()
-return (trust_recovery_paused or party_join_active
-or (Party_Paused and Party_Paused())) and true or false
+return (trust_recovery_paused or party_join_active) and true or false
 end
 -- ORIGIN / PATHING
 function Origin_Distance(x, y, z)
@@ -583,24 +582,6 @@ end
 end
 return false
 end
--- HOSTILE MONSTER CHECK
--- True only for a real monster: not a PC, trust, NPC, party member or pet.
--- (spawn_type 16 = monster; players/trusts/NPCs are other values.)
-function Is_Hostile_Mob(mob)
-if not mob or not mob.id then
-return false
-end
-if not mob.is_npc then
-return false
-end
-if mob.spawn_type ~= nil and mob.spawn_type ~= 16 then
-return false
-end
-if Is_Party_Member(mob.id) then
-return false
-end
-return true
-end
 -- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
 if not mob
@@ -682,6 +663,10 @@ end
 managed_target_id = managed_target_id or nil
 pending_target_id = pending_target_id or nil
 pending_target_time = pending_target_time or 0
+-- Preserve the last real enemy target across temporary party-member casts.
+-- managed_target_id may be nil when the user manually selected the mob.
+last_enemy_target_id = last_enemy_target_id or nil
+support_return_target_id = support_return_target_id or nil
 local TARGET_SELECT_TIMEOUT = 3
 combat_locked_target_id = combat_locked_target_id or nil
 engage_sent_target_id = engage_sent_target_id or nil
@@ -701,23 +686,24 @@ combat_lock_time = nil
 combat_started = false
 end
 -- EXACT TARGET SELECTION
--- Throttled per mob: Target_Monitor (0.1s), Follow_Monitor (0.2s) and
--- Targeting (0.5s) all re-select, which in the debug log meant hundreds of
--- identical injected packets while <t> stayed empty.
-local SELECT_MIN_INTERVAL = 0.6
-local last_select_id = nil
-local last_select_time = 0
 -- Select a specific mob by ID, avoiding name-based ambiguity.
 function Select_Target_By_Id(mob)
 if not mob or not mob.id or not mob.index then
 Debug.Log('EXACT SELECT FAILED - INVALID MOB')
 return false
 end
+local player = windower.ffxi.get_player()
 if Is_Player_Pet(mob) then
 Debug.Target('EXACT SELECT BLOCKED - PLAYER PET/LUPON', mob)
 return false
 end
-local player = windower.ffxi.get_player()
+-- Hard safety guard: no target-selection caller may select the player
+-- or a party member as a combat target. Support spells target names directly
+-- and do not need Select_Target().
+if (player and mob.id == player.id) or Is_Party_Member(mob.id) then
+Debug.Target('EXACT SELECT BLOCKED - PLAYER/PARTY MEMBER', mob)
+return false
+end
 if not player or not player.id then
 Debug.Log('EXACT SELECT FAILED - PLAYER UNAVAILABLE')
 return false
@@ -741,14 +727,6 @@ tostring(mob.id)
 )
 return false
 end
-local now_sel = os.clock()
-if last_select_id == current_mob.id
-and (now_sel - last_select_time) < SELECT_MIN_INTERVAL
-then
-return true
-end
-last_select_id = current_mob.id
-last_select_time = now_sel
 local ok, err = pcall(function()
 packets.inject(packets.new('incoming', 0x058, {
 ['Player'] = player.id,
@@ -824,6 +802,11 @@ if Is_Player_Pet(mob) then
 Debug.Target('ENGAGE BLOCKED - PLAYER PET/LUPON', mob)
 return false
 end
+local target_player = windower.ffxi.get_player()
+if (target_player and mob.id == target_player.id) or Is_Party_Member(mob.id) then
+Debug.Target('ENGAGE BLOCKED - PLAYER/PARTY MEMBER', mob)
+return false
+end
 -- COMBAT ALREADY LOCKED
 if combat_locked_target_id then
 if combat_locked_target_id == mob.id then
@@ -887,13 +870,6 @@ then
 Debug.Target('ENGAGE BLOCKED - CLAIMED BY SOMEONE ELSE OR UNKNOWN CLAIM', mob)
 return false
 end
--- Do not commit while busy or casting: /attack on sent mid-cast is
--- silently dropped, and the 10s give-up in Target_Monitor then benches
--- the mob. Return false so the next tick retries cleanly.
-if (isBusy or 0) > 0 or isCasting then
-Debug.State('ENGAGE DEFERRED - BUSY/CASTING')
-return false
-end
 -- COMMIT COMBAT
 combat_locked_target_id = mob.id
 managed_target_id = mob.id
@@ -953,9 +929,7 @@ return MELEE_ENGAGE_RANGE
 end
 function Follow_Monitor()
 while Start_Engine do
-if party_follow_override then
--- Party commands (rez / regroup) own movement right now.
-elseif combat_locked_target_id then
+if combat_locked_target_id then
 -- Preserve the combat lock. Never switch targets here.
 local target = windower.ffxi.get_mob_by_id(combat_locked_target_id)
 if target and target.valid_target then
@@ -1012,11 +986,42 @@ local player = windower.ffxi.get_player()
 if not player or not active_profile then
 return
 end
-if (active_profile.debuffs or active_profile.magic_burst)
-and active_profile.auto_engage == false
-and not windower.ffxi.get_mob_by_target('t')
+if not ((active_profile.debuffs or active_profile.magic_burst)
+and active_profile.auto_engage == false) then
+return
+end
+-- Never steal the target during a support cast. Buff_Tick calls this only
+-- after its busy/casting/pending-cast guards, but keep the guard here too.
+if isCasting or (isBusy or 0) > 0 or pending_cast then
+return
+end
+local current = windower.ffxi.get_mob_by_target('t')
+local wanted_id = support_return_target_id or combat_locked_target_id or managed_target_id
+local wanted = wanted_id and windower.ffxi.get_mob_by_id(wanted_id)
+if not wanted or not wanted.valid_target or type(wanted.hpp) ~= 'number' or wanted.hpp <= 0 or Is_Player_Pet(wanted) or Is_Party_Member(wanted.id) or wanted.id == player.id then
+wanted_id = combat_locked_target_id or managed_target_id or last_enemy_target_id
+wanted = wanted_id and windower.ffxi.get_mob_by_id(wanted_id)
+end
+if wanted
+and wanted.valid_target
+and type(wanted.hpp) == 'number'
+and wanted.hpp > 0
+and not Is_Player_Pet(wanted)
+and not Is_Party_Member(wanted.id)
+and wanted.id ~= player.id
 then
-windower.send_command('input /target <p1>; wait 0.2; input /target <bt>')
+if not current or current.id ~= wanted.id then
+Debug.Target('DEBUFF TARGET RESTORE MANAGED ENEMY', wanted)
+Select_Target(wanted)
+elseif support_return_target_id == wanted.id then
+support_return_target_id = nil
+end
+return
+end
+-- Fallback for cases where target discovery has not established a managed
+-- enemy yet. The battle target is preferable to leaving a player selected.
+if not current then
+windower.send_command('input /target <bt>')
 end
 end
 -- COMBAT DAMAGE WATCH
@@ -1163,17 +1168,12 @@ end
 --     here; Target_Monitor releases it when combat actually ends.
 local ENGAGEMENT_SYNC_INTERVAL = 2
 local LOCK_LOST_GRACE = 4
--- Never hand the fight to something farther than this (squared yalms).
-local HANDOFF_MAX_DIST_SQ = 30 * 30
--- Ignore an attacker that hit us longer ago than this (seconds).
-local HANDOFF_ATTACKER_MAX_AGE = 10
 local function Is_Live_Enemy(mob)
 return mob
 and mob.id
 and mob.valid_target
 and type(mob.hpp) == 'number'
 and mob.hpp > 0
-and Is_Hostile_Mob(mob)
 end
 local function Can_Switch_To(mob, player)
 if not mob
@@ -1182,11 +1182,6 @@ or not Is_Live_Enemy(mob)
 or Is_Player_Pet(mob)
 or Is_Party_Member(mob.id)
 or Is_Unattackable(mob.id)
-then
-return false
-end
-if type(mob.distance) ~= 'number'
-or mob.distance > HANDOFF_MAX_DIST_SQ
 then
 return false
 end
@@ -1260,11 +1255,7 @@ return true
 end
 end
 end
-if last_damage_source_id
-and last_damage_source_id ~= current_id
-and last_damage_taken_time
-and (os.clock() - last_damage_taken_time) <= HANDOFF_ATTACKER_MAX_AGE
-then
+if last_damage_source_id and last_damage_source_id ~= current_id then
 local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
 if Can_Switch_To(attacker, player) then
 if Handoff_Combat_Lock(attacker, '[Lazy] Engaged target mismatch -- retargeting to ') then
@@ -1288,7 +1279,11 @@ if combat_locked_target_id then
 current_id = combat_locked_target_id
 local locked =
 windower.ffxi.get_mob_by_id(combat_locked_target_id)
-if Is_Live_Enemy(locked) then
+if locked and Is_Party_Member(locked.id) then
+Debug.Target('COMBAT LOCK IS PARTY MEMBER - CLEARING INVALID LOCK', locked)
+Clear_Combat_Target()
+lock_missing_since = nil
+elseif Is_Live_Enemy(locked) and not Is_Player_Pet(locked) and not Is_Party_Member(locked.id) then
 target_ok = true
 lock_missing_since = nil
 elseif locked
@@ -1351,23 +1346,10 @@ if math.abs(d) > math.rad(10) then
 windower.ffxi.turn(desired)
 end
 end
--- Debuffs first (RDM): true while combat should wait for Buff_Tick to cast a
--- due debuff. Bounded so a debuff that never lands cannot freeze the rotation.
-local debuff_hold_since = nil
-local function Hold_For_Debuffs()
-if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
-debuff_hold_since = debuff_hold_since or os.clock()
-return (os.clock() - debuff_hold_since) < 8
-end
-debuff_hold_since = nil
-return false
-end
 -- Per-tick combat rotation (called by Lazy.lua's Engine via pcall).
 function Combat()
 local player = windower.ffxi.get_player()
 if not player then return end
--- Raising someone / using a warp item comes before anything else.
-if Party_Hold_Combat and Party_Hold_Combat() then return end
 local target = windower.ffxi.get_mob_by_target('t')
 local starter = Get_WS_Starter()
 if player.status == 1 then
@@ -1396,30 +1378,30 @@ and true
 or false
 end
 if magic_burst_ok then
--- A valid magic burst gets first priority; then RDM applies due debuffs.
+-- A valid magic burst gets first priority.
 if Try_Magic_Burst and Try_Magic_Burst() then return end
-if Hold_For_Debuffs() then
+end
+-- RDM's required debuffs outrank ordinary nukes and everything below,
+-- whether or not magic-burst mode is currently eligible.
+if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
 return
 end
+-- Free nuking is independent of the magic-burst gate. In particular, GEO
+-- must still free-nuke when a burst-only prerequisite buff is absent.
 if Try_Free_Nuke and Try_Free_Nuke() then return end
 -- Jobs that never melee (auto_engage = false: BLM, GEO, SCH) stop here.
--- A melee job with magic burst (NIN) carries on to the weaponskill code
--- below. It used to return here too, so NIN never opened a skillchain.
-if active_profile.auto_engage == false then
+-- Melee jobs with magic burst (e.g. NIN) continue to their WS logic.
+if active_profile and active_profile.auto_engage == false then
 return
 end
--- A melee job (NIN) must not open a new chain on top of a window it is
--- about to burst: the opener would replace the skillchain mid-cast.
-if Burst_Window_Open
+-- A melee job must not open a new chain on top of a window it is about to
+-- burst; the opener would replace the skillchain mid-cast.
+if magic_burst_ok
+and Burst_Window_Open
 and Get_Burst_Spell
 and Burst_Window_Open(target)
 and Get_Burst_Spell(target)
 then
-return
-end
-end
--- Also prioritize RDM debuffs when magic-burst mode is disabled or gated off.
-if Hold_For_Debuffs() then
 return
 end
 if active_profile
@@ -1531,6 +1513,30 @@ local player = windower.ffxi.get_player()
 local target = windower.ffxi.get_mob_by_target('t')
 local target_id = target and target.id
 Debug.Target_Changed(target)
+-- Remember an actual enemy while it is selected. If a support action then
+-- switches <t> to a party member (or clears it), keep the enemy ID so it can
+-- be restored even when managed_target_id was never set by autotargeting.
+local target_is_enemy = target
+and target.id ~= (player and player.id)
+and target.valid_target ~= false
+and type(target.hpp) == 'number'
+and target.hpp > 0
+and (not target.spawn_type or target.spawn_type == 16)
+and not Is_Party_Member(target.id)
+and not Is_Player_Pet(target)
+if target_is_enemy then
+if not isCasting and (isBusy or 0) <= 0 and not pending_cast then
+last_enemy_target_id = target.id
+if support_return_target_id == target.id then
+support_return_target_id = nil
+end
+end
+elseif (isCasting or (isBusy or 0) > 0 or pending_cast)
+and last_enemy_target_id
+and not support_return_target_id
+then
+support_return_target_id = last_enemy_target_id
+end
 -- COMBAT LOCK OWNS EVERYTHING
 if combat_locked_target_id then
 pending_target_id = nil
@@ -1556,9 +1562,9 @@ else
 -- Pre-engage lock that never actually reached combat.
 local locked =
 windower.ffxi.get_mob_by_id(combat_locked_target_id)
-if locked and Is_Player_Pet(locked) then
+if locked and (Is_Player_Pet(locked) or Is_Party_Member(locked.id)) then
 Debug.Target(
-'PRE-ENGAGE LOCK IS PLAYER PET/LUPON - CLEARING',
+'PRE-ENGAGE LOCK IS PLAYER PET/LUPON OR PARTY MEMBER - CLEARING',
 locked
 )
 Clear_Combat_Target()
@@ -1622,7 +1628,7 @@ coroutine.sleep(0.1)
 -- Preserve an active fight even if recovery started before this
 -- monitor adopted the target.
 elseif player and player.status == 1 then
-if target and target.id and not Is_Player_Pet(target) and Is_Hostile_Mob(target) then
+if target and target.id and not Is_Player_Pet(target) then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1639,12 +1645,29 @@ elseif Targeting_Paused() then
 pending_target_id = nil
 pending_target_time = 0
 -- MANAGED TARGET OUTSIDE COMBAT
-elseif managed_target_id then
-if not target or target.id ~= managed_target_id then
-local mob = windower.ffxi.get_mob_by_id(managed_target_id)
-if mob and mob.valid_target then
-Debug.Target('TARGET MONITOR RESELECT', mob)
+-- Support spells temporarily select a party member. Do not fight that
+-- temporary target while a cast/action is underway; restore our managed
+-- enemy as soon as the action has actually finished.
+elseif support_return_target_id or managed_target_id then
+if not isCasting and (isBusy or 0) <= 0 and not pending_cast then
+local wanted_id = support_return_target_id or managed_target_id
+if not target or target.id ~= wanted_id then
+local mob = windower.ffxi.get_mob_by_id(wanted_id)
+if mob
+and mob.valid_target
+and type(mob.hpp) == 'number'
+and mob.hpp > 0
+and not Is_Player_Pet(mob)
+and not Is_Party_Member(mob.id)
+and (not player or mob.id ~= player.id)
+then
+Debug.Target('TARGET MONITOR RESTORE ENEMY TARGET', mob)
 Select_Target(mob)
+else
+support_return_target_id = nil
+end
+elseif support_return_target_id and target and target.id == support_return_target_id then
+support_return_target_id = nil
 end
 end
 end
@@ -1675,7 +1698,7 @@ Debug.Target('CURRENT <t> IS PLAYER PET/LUPON - STOPPING ATTACK', target)
 windower.send_command('input /attack off')
 Clear_Combat_Target()
 windower.ffxi.follow(0)
-elseif target and target.id and Is_Hostile_Mob(target) then
+elseif target and target.id then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1694,16 +1717,12 @@ windower.ffxi.follow(0)
 elseif Targeting_Paused() then
 pending_target_id = nil
 pending_target_time = 0
-if not party_follow_override then
 windower.ffxi.follow(0)
-end
 -- WAITING FOR TARGET SELECTION
 elseif pending_target_id then
 local expected_id = pending_target_id
 local confirmed = Confirm_Target({ id = expected_id })
 if confirmed then
--- Timeout counts from the last time the target was confirmed.
-pending_target_time = os.clock()
 local mob = windower.ffxi.get_mob_by_id(expected_id)
 if not mob
 or not mob.valid_target
@@ -1729,26 +1748,15 @@ Debug.Target('CONFIRMED TARGET READY TO ENGAGE', mob)
 Engage_Target(mob)
 end
 end
-elseif pending_target_time > 0
-and (os.clock() - pending_target_time) > TARGET_SELECT_TIMEOUT
-then
--- The select never landed. Bench this mob briefly so autotarget
--- picks another instead of sitting here spamming the same packet.
-Debug.Log('>>> TARGET SELECT TIMED OUT - BENCHING <<< target=' .. tostring(expected_id))
-unattackable_until[expected_id] = os.clock() + 10
-managed_target_id = nil
-pending_target_id = nil
-pending_target_time = 0
-windower.ffxi.follow(0)
 end
 -- EXISTING MANAGED TARGET
 elseif managed_target_id then
 local target = windower.ffxi.get_mob_by_target('t')
 local managed_mob =
 windower.ffxi.get_mob_by_id(managed_target_id)
-if managed_mob and Is_Player_Pet(managed_mob) then
+if managed_mob and (Is_Player_Pet(managed_mob) or Is_Party_Member(managed_mob.id) or managed_mob.id == player.id) then
 Debug.Target(
-'MANAGED TARGET IS PLAYER PET/LUPON - DROPPING',
+'MANAGED TARGET IS PLAYER/PARTY MEMBER/PET - DROPPING',
 managed_mob
 )
 managed_target_id = nil
