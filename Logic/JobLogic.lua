@@ -250,11 +250,20 @@ function Cast_Spell_On(spell_name, target)
     isBusy = Action_Delay
     return true
 end
--- Self-targeted job ability.
+-- Job ability on its natural target. Self-capable abilities go on <me>;
+-- enemy-only ones (Provoke, Steal, Box Step...) go on <t>. Sending an
+-- enemy-only JA at <me> gets "You cannot attack that target."
+-- targets bitmask: 1 self, 2 player, 4 party, 8 ally, 16 npc, 32 enemy.
 function Cast_Ability(ability_name)
     if not Can_Cast_Ability(ability_name) then return false end
+    local ability = res.job_abilities:with('name', ability_name)
+    local mask = ability and ability.targets or 1
+    local tgt = '<me>'
+    if mask % 2 < 1 and mask >= 32 then
+        tgt = '<t>'
+    end
     windower.send_command(
-        'input /ja "' .. ability_name .. '" <me>'
+        'input /ja "' .. ability_name .. '" ' .. tgt
     )
     isBusy = Action_Delay
     return true
