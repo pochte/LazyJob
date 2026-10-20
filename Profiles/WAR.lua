@@ -18,10 +18,18 @@ JOB_PROFILES.WAR = {
 		'Hasso', 'Berserk', 'Blood Rage', 'Aggressor',
 	},
 
+	-- //lazy chainmode: Upheaval > Ukkos Fury > Upheaval, then the opener fires again once
+	-- the window ends, so it repeats. //lazy openmode uses the starter and
+	-- closers above instead.
+	ws_sc_chain = {
+		{ 'Upheaval', 2000 },
+		{ "Ukko's Fury", 1000 },
+		{ 'Upheaval', 1000 },
+	},
 	food = 'Red Curry Bun',
 
 	-- STUCK RECOVERY
 	-- Provoke and re-face if engaged without landing hits.
-	provoke_if_stuck = true,
+	provoke_if_stuck = false,
 	stuck_threshold = 10,
 }

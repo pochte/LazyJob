@@ -1336,6 +1336,7 @@ end
 -- Moved here from Lazy.lua / JobLogic.lua so there is exactly one copy.
 -- engaged_since is global (Combat's stuck-target Provoke timer).
 engaged_since = nil
+provoke_last_try = 0
 -- Heading (radians) from the player to a world position.
 function HeadingTo(x, y)
 local player = windower.ffxi.get_mob_by_id(windower.ffxi.get_player().id)
@@ -1378,8 +1379,24 @@ and target
 and engaged_since
 and (os.clock() - engaged_since) >= (active_profile.stuck_threshold or 10)
 then
-if Can_Cast_Ability('Provoke') then
-Cast_Ability('Provoke')
+-- Provoke is an enemy-only ability. Never route it through the generic
+-- Cast_Ability helper (it resolved to a party member / the mob's claimer,
+-- giving 'You cannot attack that target.' every tick). Send it at <t>
+-- only when <t> is a real hostile, and throttle retries: a rejected JA
+-- never starts its recast, so Can_Cast_Ability stays true forever.
+local now = os.clock()
+if (now - (provoke_last_try or 0)) >= 30
+and target
+and target.valid_target
+and type(target.hpp) == 'number'
+and target.hpp > 0
+and target.id ~= player.id
+and not Is_Party_Member(target.id)
+and not Is_Player_Pet(target)
+and Can_Cast_Ability('Provoke')
+then
+provoke_last_try = now
+windower.send_command('input /ja "Provoke" <t>')
 end
 TurnToTarget()
 end
