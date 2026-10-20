@@ -218,22 +218,28 @@ end
 if not target or not target.id then
 return
 end
--- If combat never actually started, the engage attempt failed.
--- Once combat has started, NEVER release the combat lock because
--- of this message.
+-- A rejected attack against the player or a party member is always
+-- invalid, even if a transient status update made combat_started true.
+-- Clear that bad lock so Target_Monitor cannot keep retrying /attack on it.
+local player = windower.ffxi.get_player()
+local is_player_or_party = (player and target.id == player.id)
+    or Is_Party_Member(target.id)
+    or Is_Player_Pet(target)
 if target.id == combat_locked_target_id then
-if not combat_started then
-Debug.Target(
-'ATTACK REJECTED BEFORE COMBAT - CLEARING LOCK',
-target
-)
-unattackable_until[target.id] = os.clock() + 20
-Clear_Combat_Target()
-end
+    if is_player_or_party or not combat_started then
+        Debug.Target(
+            is_player_or_party
+                and 'ATTACK REJECTED - INVALID PLAYER/PARTY/PET LOCK - CLEARING'
+                or 'ATTACK REJECTED BEFORE COMBAT - CLEARING LOCK',
+            target
+        )
+        unattackable_until[target.id] = os.clock() + 20
+        Clear_Combat_Target()
+    end
 else
--- A rejection for a different target must not affect the
--- existing combat lock.
-unattackable_until[target.id] = os.clock() + 20
+    -- A rejection for a different target must not affect the
+    -- existing combat lock.
+    unattackable_until[target.id] = os.clock() + 20
 end
 end)
 -- RANGED PULL
@@ -484,9 +490,12 @@ local mob_array = windower.ffxi.get_mob_array()
 if not mob_array then
 return nil
 end
+local player = windower.ffxi.get_player()
 for index, mob in pairs(mob_array) do
 if mob
 and not Is_Player_Pet(mob)
+and not Is_Party_Member(mob.id)
+and not (player and mob.id == player.id)
 and mob.valid_target
 and mob.hpp and mob.hpp > 0
 and not Is_Unattackable(mob.id)
@@ -509,10 +518,13 @@ local mob_array = windower.ffxi.get_mob_array()
 if not mob_array then
 return nil
 end
+local player = windower.ffxi.get_player()
 local candidates = {}
 for _, mob in pairs(mob_array) do
 if mob
 and not Is_Player_Pet(mob)
+and not Is_Party_Member(mob.id)
+and not (player and mob.id == player.id)
 and mob.valid_target
 and mob.hpp and mob.hpp > 0
 and not Is_Unattackable(mob.id)
@@ -1628,7 +1640,12 @@ coroutine.sleep(0.1)
 -- Preserve an active fight even if recovery started before this
 -- monitor adopted the target.
 elseif player and player.status == 1 then
-if target and target.id and not Is_Player_Pet(target) then
+if target
+and target.id
+and not Is_Player_Pet(target)
+and not Is_Party_Member(target.id)
+and target.id ~= player.id
+then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1693,8 +1710,12 @@ windower.ffxi.follow(0)
 -- is pending. Adopt the current target so its lock is kept.
 elseif player.status == 1 then
 local target = windower.ffxi.get_mob_by_target('t')
-if target and Is_Player_Pet(target) then
-Debug.Target('CURRENT <t> IS PLAYER PET/LUPON - STOPPING ATTACK', target)
+if target and (
+    Is_Player_Pet(target)
+    or Is_Party_Member(target.id)
+    or target.id == player.id
+) then
+Debug.Target('CURRENT <t> IS PLAYER/PARTY MEMBER/PET - STOPPING ATTACK', target)
 windower.send_command('input /attack off')
 Clear_Combat_Target()
 windower.ffxi.follow(0)
@@ -1830,6 +1851,8 @@ local target = windower.ffxi.get_mob_by_target('t')
 Debug.Target('ASSIST TARGET', target)
 if target
 and not Is_Player_Pet(target)
+and not Is_Party_Member(target.id)
+and target.id ~= (windower.ffxi.get_player() or {}).id
 and target.valid_target
 and type(target.hpp) == 'number'
 and target.hpp > 0
