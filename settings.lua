@@ -92,6 +92,44 @@ party_join = {
     fight_timeout = 120,   -- seconds to let a fight in progress finish first
     level_sync = true,
 }
+-- PARTY COMMANDS (Logic/PartyCommands.lua)
+-- Say these in PARTY chat (the whole line, exactly). Who may use them is the
+-- trusted_players list in settings.xml: //lazy trust add|remove|list|clear.
+-- Empty list = everyone.
+--   reset     everyone re-anchors their origin where they stand (stuck behind a rock)
+--   go home   everyone warps (items below, in order), then Lazy stops and prints stats
+--   stop / start   stop or start Lazy on everyone
+--   hold      no new pulls until "resume"      resume   continue + new origin here
+--   regroup   run to the party leader and hold  (then say "resume")
+--   rebuff    forget every buff timer so everything is recast
+--   tnl       print this character's session stats to the console (also //lazy tnl)
+-- Automatic: a dead player says "rez" and a WHM > SCH > RDM > PLD > anyone with a
+-- raise sub job raises them; the party waits for Weakness to wear off. Doom is
+-- announced once, Holy Water is used, and Cursna casters work on it. Other
+-- debuffs are cleansed by WHM/SCH (main or sub) except those in cleanse_ignore.
+party_commands = {
+    -- phrases = { go_home = 'go home' },     -- rename any phrase here
+    rez_enabled = true,
+    rez_timeout = 180,         -- dead this long with no raise: Lazy stops (as before)
+    rez_step = 4,              -- seconds between each raiser's turn
+    rez_last_ditch_wait = 10,  -- extra wait for jobs that only raise from a sub job
+    rez_give_up = 90,          -- stop working on one corpse after this long
+    rez_pause_max = 900,       -- never keep the party paused longer than this
+    wait_for_weakness = true,
+    raise_accept_param = 0,    -- dead character accepting the raise prompt (try 1 if it declines)
+    doom_holy_water = true,
+    holy_water_tries = 8,
+    cleanse_step = 2,
+    cleanse_ignore = { 'Evasion Down' },
+    regroup_timeout = 45,
+    -- Warp items, tried in order. slot = where to equip it first (nil = just use it).
+    go_home_items = {
+        { name = 'Warp Ring',   slot = 'ring2' },
+        { name = 'Treat Staff', slot = 'main' },
+        { name = 'Warp Cudgel', slot = 'main' },
+        { name = 'Instant Warp' },
+    },
+}
 -- Trust names exactly as the party list shows them, and their jobs.
 -- (Game data has no job for trusts, so this is hardcoded.)
 trust_jobs = {

@@ -278,7 +278,13 @@ function Debuff_Pending()
     local pet = windower.ffxi.get_mob_by_target('pet')
     local recasts = windower.ffxi.get_spell_recasts()
     local known = windower.ffxi.get_spells()
-    for _, debuff in ipairs(active_profile.debuffs) do
+    -- debuff_hold_hpp (profile): above this mob HP% every debuff holds combat;
+    -- at or below it only the FIRST debuff in the list does (RDM: Dia).
+    local hold_hpp = active_profile.debuff_hold_hpp
+    for index, debuff in ipairs(active_profile.debuffs) do
+        if hold_hpp and index > 1 and target.hpp <= hold_hpp then
+            break
+        end
         local names, require_no_pet
         if type(debuff) == 'string' then
             names = {debuff}
@@ -369,7 +375,10 @@ function Buff_Tick()
                             local spell = res.spells:with('name', name)
                             if spell and Cast_Spell_On(name, target_spec) then
                                 local cast_time = os.clock()
-                                -- Cache this only after the incoming action confirms success.
+                                -- Mark it as cast right away so the loop moves on to the
+                                -- next debuff; an interrupted cast clears this again
+                                -- (see the interrupt branch in Lazy.lua).
+                                debuff_last_cast[spell_key] = cast_time
                                 pending_cast = {
                                     store = debuff_last_cast,
                                     key = spell_key,

@@ -21,7 +21,8 @@
 -- acquisition, new engagements and approaching; never touches an
 -- established combat lock.
 function Targeting_Paused()
-return (trust_recovery_paused or party_join_active) and true or false
+return (trust_recovery_paused or party_join_active
+or (Party_Paused and Party_Paused())) and true or false
 end
 -- ORIGIN / PATHING
 function Origin_Distance(x, y, z)
@@ -582,6 +583,24 @@ end
 end
 return false
 end
+-- HOSTILE MONSTER CHECK
+-- True only for a real monster: not a PC, trust, NPC, party member or pet.
+-- (spawn_type 16 = monster; players/trusts/NPCs are other values.)
+function Is_Hostile_Mob(mob)
+if not mob or not mob.id then
+return false
+end
+if not mob.is_npc then
+return false
+end
+if mob.spawn_type ~= nil and mob.spawn_type ~= 16 then
+return false
+end
+if Is_Party_Member(mob.id) then
+return false
+end
+return true
+end
 -- TARGET LEGITIMACY
 function Is_Legitimate_Target(mob, expected_name, party_ids, already_engaged)
 if not mob
@@ -682,6 +701,12 @@ combat_lock_time = nil
 combat_started = false
 end
 -- EXACT TARGET SELECTION
+-- Throttled per mob: Target_Monitor (0.1s), Follow_Monitor (0.2s) and
+-- Targeting (0.5s) all re-select, which in the debug log meant hundreds of
+-- identical injected packets while <t> stayed empty.
+local SELECT_MIN_INTERVAL = 0.6
+local last_select_id = nil
+local last_select_time = 0
 -- Select a specific mob by ID, avoiding name-based ambiguity.
 function Select_Target_By_Id(mob)
 if not mob or not mob.id or not mob.index then
@@ -716,6 +741,14 @@ tostring(mob.id)
 )
 return false
 end
+local now_sel = os.clock()
+if last_select_id == current_mob.id
+and (now_sel - last_select_time) < SELECT_MIN_INTERVAL
+then
+return true
+end
+last_select_id = current_mob.id
+last_select_time = now_sel
 local ok, err = pcall(function()
 packets.inject(packets.new('incoming', 0x058, {
 ['Player'] = player.id,
@@ -854,6 +887,13 @@ then
 Debug.Target('ENGAGE BLOCKED - CLAIMED BY SOMEONE ELSE OR UNKNOWN CLAIM', mob)
 return false
 end
+-- Do not commit while busy or casting: /attack on sent mid-cast is
+-- silently dropped, and the 10s give-up in Target_Monitor then benches
+-- the mob. Return false so the next tick retries cleanly.
+if (isBusy or 0) > 0 or isCasting then
+Debug.State('ENGAGE DEFERRED - BUSY/CASTING')
+return false
+end
 -- COMMIT COMBAT
 combat_locked_target_id = mob.id
 managed_target_id = mob.id
@@ -913,7 +953,9 @@ return MELEE_ENGAGE_RANGE
 end
 function Follow_Monitor()
 while Start_Engine do
-if combat_locked_target_id then
+if party_follow_override then
+-- Party commands (rez / regroup) own movement right now.
+elseif combat_locked_target_id then
 -- Preserve the combat lock. Never switch targets here.
 local target = windower.ffxi.get_mob_by_id(combat_locked_target_id)
 if target and target.valid_target then
@@ -1121,12 +1163,17 @@ end
 --     here; Target_Monitor releases it when combat actually ends.
 local ENGAGEMENT_SYNC_INTERVAL = 2
 local LOCK_LOST_GRACE = 4
+-- Never hand the fight to something farther than this (squared yalms).
+local HANDOFF_MAX_DIST_SQ = 30 * 30
+-- Ignore an attacker that hit us longer ago than this (seconds).
+local HANDOFF_ATTACKER_MAX_AGE = 10
 local function Is_Live_Enemy(mob)
 return mob
 and mob.id
 and mob.valid_target
 and type(mob.hpp) == 'number'
 and mob.hpp > 0
+and Is_Hostile_Mob(mob)
 end
 local function Can_Switch_To(mob, player)
 if not mob
@@ -1135,6 +1182,11 @@ or not Is_Live_Enemy(mob)
 or Is_Player_Pet(mob)
 or Is_Party_Member(mob.id)
 or Is_Unattackable(mob.id)
+then
+return false
+end
+if type(mob.distance) ~= 'number'
+or mob.distance > HANDOFF_MAX_DIST_SQ
 then
 return false
 end
@@ -1208,7 +1260,11 @@ return true
 end
 end
 end
-if last_damage_source_id and last_damage_source_id ~= current_id then
+if last_damage_source_id
+and last_damage_source_id ~= current_id
+and last_damage_taken_time
+and (os.clock() - last_damage_taken_time) <= HANDOFF_ATTACKER_MAX_AGE
+then
 local attacker = windower.ffxi.get_mob_by_id(last_damage_source_id)
 if Can_Switch_To(attacker, player) then
 if Handoff_Combat_Lock(attacker, '[Lazy] Engaged target mismatch -- retargeting to ') then
@@ -1295,10 +1351,23 @@ if math.abs(d) > math.rad(10) then
 windower.ffxi.turn(desired)
 end
 end
+-- Debuffs first (RDM): true while combat should wait for Buff_Tick to cast a
+-- due debuff. Bounded so a debuff that never lands cannot freeze the rotation.
+local debuff_hold_since = nil
+local function Hold_For_Debuffs()
+if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
+debuff_hold_since = debuff_hold_since or os.clock()
+return (os.clock() - debuff_hold_since) < 8
+end
+debuff_hold_since = nil
+return false
+end
 -- Per-tick combat rotation (called by Lazy.lua's Engine via pcall).
 function Combat()
 local player = windower.ffxi.get_player()
 if not player then return end
+-- Raising someone / using a warp item comes before anything else.
+if Party_Hold_Combat and Party_Hold_Combat() then return end
 local target = windower.ffxi.get_mob_by_target('t')
 local starter = Get_WS_Starter()
 if player.status == 1 then
@@ -1329,7 +1398,7 @@ end
 if magic_burst_ok then
 -- A valid magic burst gets first priority; then RDM applies due debuffs.
 if Try_Magic_Burst and Try_Magic_Burst() then return end
-if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
+if Hold_For_Debuffs() then
 return
 end
 if Try_Free_Nuke and Try_Free_Nuke() then return end
@@ -1350,7 +1419,7 @@ return
 end
 end
 -- Also prioritize RDM debuffs when magic-burst mode is disabled or gated off.
-if current_job == 'RDM' and Debuff_Pending and Debuff_Pending() then
+if Hold_For_Debuffs() then
 return
 end
 if active_profile
@@ -1553,7 +1622,7 @@ coroutine.sleep(0.1)
 -- Preserve an active fight even if recovery started before this
 -- monitor adopted the target.
 elseif player and player.status == 1 then
-if target and target.id and not Is_Player_Pet(target) then
+if target and target.id and not Is_Player_Pet(target) and Is_Hostile_Mob(target) then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1606,7 +1675,7 @@ Debug.Target('CURRENT <t> IS PLAYER PET/LUPON - STOPPING ATTACK', target)
 windower.send_command('input /attack off')
 Clear_Combat_Target()
 windower.ffxi.follow(0)
-elseif target and target.id then
+elseif target and target.id and Is_Hostile_Mob(target) then
 managed_target_id = target.id
 combat_locked_target_id = target.id
 engage_sent_target_id = target.id
@@ -1625,12 +1694,16 @@ windower.ffxi.follow(0)
 elseif Targeting_Paused() then
 pending_target_id = nil
 pending_target_time = 0
+if not party_follow_override then
 windower.ffxi.follow(0)
+end
 -- WAITING FOR TARGET SELECTION
 elseif pending_target_id then
 local expected_id = pending_target_id
 local confirmed = Confirm_Target({ id = expected_id })
 if confirmed then
+-- Timeout counts from the last time the target was confirmed.
+pending_target_time = os.clock()
 local mob = windower.ffxi.get_mob_by_id(expected_id)
 if not mob
 or not mob.valid_target
@@ -1656,6 +1729,17 @@ Debug.Target('CONFIRMED TARGET READY TO ENGAGE', mob)
 Engage_Target(mob)
 end
 end
+elseif pending_target_time > 0
+and (os.clock() - pending_target_time) > TARGET_SELECT_TIMEOUT
+then
+-- The select never landed. Bench this mob briefly so autotarget
+-- picks another instead of sitting here spamming the same packet.
+Debug.Log('>>> TARGET SELECT TIMED OUT - BENCHING <<< target=' .. tostring(expected_id))
+unattackable_until[expected_id] = os.clock() + 10
+managed_target_id = nil
+pending_target_id = nil
+pending_target_time = 0
+windower.ffxi.follow(0)
 end
 -- EXISTING MANAGED TARGET
 elseif managed_target_id then

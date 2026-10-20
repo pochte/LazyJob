@@ -231,6 +231,8 @@ assist = '',
 buffs_active = true,
 cure_active = true,
 rest_active = true,
+-- Comma-separated names allowed to use party-chat commands (empty = everyone).
+trusted_players = '',
 }
 settings = config.load(defaults)
 -- LOAD SHARED LOGIC MODULES
@@ -243,6 +245,7 @@ settings = config.load(defaults)
 dofile(windower.addon_path .. 'debug/Debug.lua')
 dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
 dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
+dofile(windower.addon_path .. 'Logic/PartyCommands.lua')
 -- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
 if id ~= 0x028 then return end
@@ -264,6 +267,10 @@ isCasting = true
 if action['Target 1 Action 1 Message'] == 0 then
 isCasting = false
 isBusy = Action_Delay
+-- Interrupted debuff: forget the send-time mark so it is retried.
+if pending_cast and pending_cast.store == debuff_last_cast then
+debuff_last_cast[pending_cast.key] = nil
+end
 pending_cast = nil
 end
 elseif action.Category == 11 then
@@ -275,12 +282,8 @@ end)
 -- last_damage_kind) and the aggro queue are OWNED by TargetLogic.lua.
 -- They are globals; Death_Monitor only reads them to report a cause.
 local death_reported = false
-function Death_Monitor()
-while Start_Engine do
-local player = windower.ffxi.get_player()
-if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
-if not death_reported then
-death_reported = true
+local death_rez_until = nil
+local function Report_Death_And_Stop()
 local cause = last_damage_source or 'unknown causes'
 if last_damage_kind then
 cause = cause .. ' (' .. last_damage_kind .. ')'
@@ -293,8 +296,31 @@ windower.add_to_chat(
 )
 Start_Engine = false
 end
+function Death_Monitor()
+while Start_Engine do
+local player = windower.ffxi.get_player()
+if player and player.vitals and player.vitals.hp and player.vitals.hp <= 0 then
+if not death_reported then
+death_reported = true
+-- Ask the party for a rez first (PartyCommands.lua). Only when nobody
+-- can answer does Lazy stop, as it always did.
+if Party_Death_Begin and Party_Death_Begin() then
+death_rez_until = os.clock() + ((Party_Rez_Timeout and Party_Rez_Timeout()) or 180)
+windower.add_to_chat(167, '[Lazy] You died -- asked the party for a rez, waiting...')
 else
+Report_Death_And_Stop()
+end
+elseif death_rez_until and os.clock() > death_rez_until then
+death_rez_until = nil
+windower.add_to_chat(167, '[Lazy] No rez arrived.')
+Report_Death_And_Stop()
+end
+else
+if death_reported and death_rez_until then
+windower.add_to_chat(2, '[Lazy] Raised! Waiting for weakness to wear off.')
+end
 death_reported = false
+death_rez_until = nil
 end
 coroutine.sleep(0.5)
 end
@@ -338,10 +364,11 @@ print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
 print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
 print('//lazy openmode    (opener + closers only)')
 print('//lazy retrust')
-print('//lazy join <name>   (same as them telling you the phrase)')
-print('//lazy join cancel')
-print('//lazy sync <name>   (level sync to that party member)')
-print('//lazy sync off')
+if Party_Command_Help then Party_Command_Help() end
+return
+end
+-- Party commands (//lazy join, //lazy sync, ...) live in Logic/PartyCommands.lua.
+if Party_Command and Party_Command(command, args, raw_args) then
 return
 end
 if command == 'start' then
@@ -402,6 +429,9 @@ if start_nuke_text then
 windower.add_to_chat(207, '[Lazy] Nuke mode: ' .. start_nuke_text .. '  (//lazy burstmode, //lazy freenuke)')
 end
 Snapshot_Trusts()
+if Party_Start then
+Party_Start()
+end
 coroutine.schedule(Engine, 0)
 coroutine.schedule(SC_Monitor, 0)
 coroutine.schedule(Target_Monitor, 0)
@@ -412,6 +442,9 @@ coroutine.schedule(Cure_Monitor, 0)
 coroutine.schedule(Trust_Monitor, 0)
 coroutine.schedule(Death_Monitor, 0)
 coroutine.schedule(Engagement_Sync, 0)
+if Party_Monitor then
+coroutine.schedule(Party_Monitor, 0)
+end
 coroutine.schedule(Burst_Monitor, 0)
 return
 end
@@ -579,30 +612,6 @@ Update_Job_Profile()
 Set_WS_Mode('open')
 return
 end
-if command == 'join' then
-if args[2] == 'cancel' then
-Party_Join_Cancel()
-return
-end
-if not raw_args[2] then
-print('//lazy join <name>  |  //lazy join cancel')
-return
-end
-Party_Join_Begin(raw_args[2])
-return
-end
-if command == 'sync' then
-if args[2] == 'off' then
-Clear_Level_Sync()
-return
-end
-if not raw_args[2] then
-print('//lazy sync <name>  |  //lazy sync off')
-return
-end
-Set_Level_Sync(raw_args[2])
-return
-end
 end)
 -- WEAPONSKILLS
 function Next_WS()
@@ -740,71 +749,6 @@ return false
 end
 -- NOTE: Can_Cast_Spell, Cast_Spell, Cast_Spell_On, Cast_Ability (and the
 -- other cast helpers) live in Logic/JobLogic.lua.
--- RDM gets a lightweight debuff gate: always attempt Dia first, but only
--- hold normal combat for the remaining debuffs while the mob is above 50% HP.
-local function RDM_Is_Dia(debuff)
-    local name = type(debuff) == 'table' and debuff.name or debuff
-    return type(name) == 'string' and name:lower():match('^dia') ~= nil
-end
-
-local function RDM_Debuff_Key(target, debuff)
-    local name = type(debuff) == 'table' and debuff.name or debuff
-    return tostring(target.id or target.index or target.name) .. ':' .. tostring(name)
-end
-
-function Debuff_Pending()
-    if current_job ~= 'RDM'
-        or not settings.buffs_active
-        or not active_profile
-        or not active_profile.debuffs
-    then
-        return false
-    end
-    local player = windower.ffxi.get_player()
-    local target = windower.ffxi.get_mob_by_target('t')
-    if not player or not player.vitals
-        or not target or not target.id or not target.is_npc
-        or not target.hpp or target.hpp <= 0
-        or Is_Blacklisted(target.name)
-        or Is_Party_Member(target.id)
-    then
-        return false
-    end
-    if active_profile.debuffs_engaged_only and player.status ~= 1 then
-        return false
-    end
-    local now = os.clock()
-    local recasts = windower.ffxi.get_spell_recasts() or {}
-    local known = windower.ffxi.get_spells() or {}
-    local pet = windower.ffxi.get_mob_by_target('pet')
-    for _, debuff in ipairs(active_profile.debuffs) do
-        local name = type(debuff) == 'table' and debuff.name or debuff
-        local is_dia = RDM_Is_Dia(debuff)
-        if type(name) == 'string'
-            and (target.hpp > 50 or is_dia)
-            and not (type(debuff) == 'table' and debuff.require_no_pet and pet)
-        then
-            local key = RDM_Debuff_Key(target, debuff)
-            local interval = ((type(debuff) == 'table' and debuff.interval) or 1) * 60
-            local last = debuff_last_cast[key]
-            if not last or now - last >= interval then
-                local spell = res.spells:with('name', name)
-                if spell and known[spell.id]
-                    and recasts[spell.id] == 0
-                    and player.vitals.mp >= (spell.mp_cost or 0)
-                then
-                    return true
-                elseif not spell and res.job_abilities:with('name', name)
-                    and Can_Cast_Ability(name)
-                then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
 -- BUFF SYSTEM
 function Buff_Tick()
 if not settings.buffs_active or not active_profile then return end
@@ -826,55 +770,41 @@ and target.hpp
 and target.hpp > 0
 and not Is_Blacklisted(target.name)
 then
-local debuff_list = active_profile.debuffs
--- RDM always tries Dia first, regardless of profile ordering.
-if current_job == 'RDM' then
-    debuff_list = {}
-    for _, debuff in ipairs(active_profile.debuffs) do
-        if RDM_Is_Dia(debuff) then debuff_list[#debuff_list + 1] = debuff end
-    end
-    for _, debuff in ipairs(active_profile.debuffs) do
-        if not RDM_Is_Dia(debuff) then debuff_list[#debuff_list + 1] = debuff end
-    end
+for _, debuff in ipairs(active_profile.debuffs) do
+local last = debuff_last_cast[debuff.name]
+local interval = (debuff.interval or 1) * 60
+local pet_ok = true
+if debuff.require_no_pet and pet then
+pet_ok = false
 end
-for _, debuff in ipairs(debuff_list) do
-local name = type(debuff) == 'table' and debuff.name or debuff
-local is_dia = current_job == 'RDM' and RDM_Is_Dia(debuff)
--- Once a mob is at 50% HP or below, Dia is enough; skip the rest.
-if type(name) == 'string' and (current_job ~= 'RDM' or target.hpp > 50 or is_dia) then
-local key = current_job == 'RDM' and RDM_Debuff_Key(target, debuff) or name
-local interval = ((type(debuff) == 'table' and debuff.interval) or 1) * 60
-local last = debuff_last_cast[key]
-local pet_ok = not (type(debuff) == 'table' and debuff.require_no_pet and pet)
 if pet_ok and (not last or now - last >= interval) then
 -- Pre-ability check (e.g., Blaze of Glory)
-local use_ability_before = type(debuff) == 'table' and debuff.use_ability_before
-if use_ability_before and Can_Cast_Ability(use_ability_before) then
-Cast_Ability(use_ability_before)
+if debuff.use_ability_before
+and Can_Cast_Ability(debuff.use_ability_before)
+then
+Cast_Ability(debuff.use_ability_before)
 return
 end
-local spell_target = (type(debuff) == 'table' and debuff.target) or '<t>'
-local spell = res.spells:with('name', name)
-if spell and Cast_Spell_On(name, spell_target) then
--- Dia is deliberately treated as attempted immediately: do not wait for
--- packet confirmation before moving on to the next priority.
-if is_dia then debuff_last_cast[key] = now end
+local spell_target = debuff.target or '<t>'
+local spell = res.spells:with('name', debuff.name)
+if spell and Cast_Spell_On(debuff.name, spell_target) then
 pending_cast = {
 store = debuff_last_cast,
-key = key,
+key = debuff.name,
 spell_id = spell.id,
 sent_at = now,
 }
-local use_ability_after = type(debuff) == 'table' and debuff.use_ability_after
-if use_ability_after then
-local follow_up = use_ability_after
+-- Post-ability sequence (e.g., Ecliptic Attrition)
+if debuff.use_ability_after then
+local follow_up = debuff.use_ability_after
 coroutine.schedule(function()
 coroutine.sleep(2.5)
-if Can_Cast_Ability(follow_up) then Cast_Ability(follow_up) end
+if Can_Cast_Ability(follow_up) then
+Cast_Ability(follow_up)
+end
 end, 0)
 end
 return
-end
 end
 end
 end
