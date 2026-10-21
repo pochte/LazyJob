@@ -1011,72 +1011,128 @@ local function Doom_Self_Tick(me)
     end
 end
 
+
 -- SESSION STATS ("tnl")
-party_stats = { start = nil, kills = 0, exp = 0, lp = 0, cur = nil, req = nil }
+party_stats = {
+    start = nil,
+    kills = 0,
+    exp = 0,
+    lp = 0,
+    ep = 0,
+    cur = nil,
+    req = nil
+}
+
 function Party_Stats_Reset()
     party_stats.start = os.time()
     party_stats.kills = 0
     party_stats.exp = 0
     party_stats.lp = 0
+    party_stats.ep = 0
 end
+
 local function Commas(n)
     local s = tostring(math.floor(n or 0))
     local out = s:reverse():gsub('(%d%d%d)', '%1,'):reverse()
     return (out:gsub('^,', ''))
 end
+
 local function Fmt_Duration(sec)
     sec = math.floor(sec)
-    return string.format('%dh %02dm %02ds', math.floor(sec / 3600), math.floor(sec / 60) % 60, sec % 60)
+    return string.format('%dh %02dm %02ds',
+        math.floor(sec / 3600),
+        math.floor(sec / 60) % 60,
+        sec % 60)
 end
+
 function Party_Print_Stats()
     local s = party_stats
+
     if not s.start then
         print('[Lazy] No session yet. //lazy start first.')
         return
     end
+
     local elapsed = math.max(1, os.time() - s.start)
     local per_hr = 3600 / elapsed
-    print(string.format('[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s',
-        Fmt_Duration(elapsed), s.kills, s.kills * per_hr,
-        Commas(s.exp), Commas(s.exp * per_hr), Commas(s.lp)))
+
+    print(string.format(
+        '[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s',
+        Fmt_Duration(elapsed),
+        s.kills,
+        s.kills * per_hr,
+        Commas(s.exp),
+        Commas(s.exp * per_hr),
+        Commas(s.lp),
+        Commas(s.ep)
+    ))
+
     if s.cur and s.req and s.req > 0 then
         local remaining = s.req - s.cur
         local line = '[Lazy] EXP to next level: ' .. Commas(remaining)
+
         if s.exp > 0 then
-            line = line .. ' (about ' .. Fmt_Duration(remaining / (s.exp / elapsed)) .. ' at this rate)'
+            line = line .. ' (about ' ..
+                Fmt_Duration(remaining / (s.exp / elapsed)) ..
+                ' at this rate)'
         end
+
         print(line)
     end
 end
+
 function Party_Tnl()
     Request_Own_Status()
     coroutine.schedule(Party_Print_Stats, 1.5)
 end
+
 windower.register_event('incoming text', function(original)
     if not Start_Engine or not party_stats.start or not original then
         return
     end
+
     local me = windower.ffxi.get_player()
     if not me then
         return
     end
-    local n = string.match(original, me.name .. ' gains (%d+) experience points')
+
+    -- EXP
+    local n = string.match(original,
+        me.name .. ' gains (%d+) experience points')
+
     if n then
         party_stats.kills = party_stats.kills + 1
         party_stats.exp = party_stats.exp + tonumber(n)
         return
     end
-    n = string.match(original, me.name .. ' gains (%d+) limit points')
+
+    -- Limit Points
+    n = string.match(original,
+        me.name .. ' gains (%d+) limit points')
+
     if n then
         party_stats.kills = party_stats.kills + 1
         party_stats.lp = party_stats.lp + tonumber(n)
+        return
+    end
+
+    -- Exemplar Points
+    n = string.match(original,
+        me.name .. ' gains (%d+) exemplar points')
+
+    if n then
+        party_stats.kills = party_stats.kills + 1
+        party_stats.ep = party_stats.ep + tonumber(n)
     end
 end)
+
 windower.register_event('incoming chunk', function(id, data)
     if id ~= 0x061 then
         return
     end
+
     local ok, p = pcall(packets.parse, 'incoming', data)
+
     if ok and p then
         party_stats.cur = p['Current EXP']
         party_stats.req = p['Required EXP']
