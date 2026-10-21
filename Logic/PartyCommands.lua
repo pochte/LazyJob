@@ -582,9 +582,18 @@ function Party_Is_Trusted(sender)
 end
 
 -- ROSTER / BUFFS
--- Real players only (trusts excluded). dead = 0 HP in this zone.
+-- Real players only (trusts excluded). dead = 0 HP in this zone, but only
+-- once it has held for a few seconds and the member has been in the party a
+-- while: a player who has just joined (or just zoned) shows 0 HP until their
+-- data arrives, and that must not look like a corpse.
+local member_seen = {}
+local dead_since = {}
+local DEAD_CONFIRM_SECONDS = 4
+local NEW_MEMBER_GRACE_SECONDS = 15
 local function Roster()
     local out = {}
+    local now = os.clock()
+    local present = {}
     local party = windower.ffxi.get_party()
     local me = windower.ffxi.get_player()
     local info = windower.ffxi.get_info()
@@ -597,9 +606,22 @@ local function Roster()
             local mob = m.mob
             local is_me = (m.name == me.name)
             local in_zone = (m.zone == nil) or (m.zone == info.zone)
-            local dead = in_zone and m.hp ~= nil and m.hp <= 0
+            present[m.name] = true
+            member_seen[m.name] = member_seen[m.name] or now
+            local raw_dead = in_zone and m.hp ~= nil and m.hp <= 0
+                and (m.hpp == nil or m.hpp <= 0)
+            local dead
             if is_me then
                 dead = (me.vitals and me.vitals.hp and me.vitals.hp <= 0) and true or false
+            else
+                if raw_dead then
+                    dead_since[m.name] = dead_since[m.name] or now
+                else
+                    dead_since[m.name] = nil
+                end
+                dead = raw_dead
+                    and (now - dead_since[m.name]) >= DEAD_CONFIRM_SECONDS
+                    and (now - member_seen[m.name]) >= NEW_MEMBER_GRACE_SECONDS
             end
             out[#out + 1] = {
                 m = m,
@@ -612,6 +634,12 @@ local function Roster()
                 dead = dead and true or false,
                 is_me = is_me,
             }
+        end
+    end
+    for name in pairs(member_seen) do
+        if not present[name] then
+            member_seen[name] = nil
+            dead_since[name] = nil
         end
     end
     return out
@@ -1223,6 +1251,12 @@ end)
 function Party_Tick()
     local me_player = windower.ffxi.get_player()
     if not me_player then
+        return
+    end
+    -- A party join ("chicken nuggets") owns the party until it finishes.
+    if party_join_active then
+        rez_pause_active = false
+        party_rez_busy = false
         return
     end
     known_cache = windower.ffxi.get_spells()
