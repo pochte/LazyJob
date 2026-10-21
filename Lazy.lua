@@ -243,6 +243,10 @@ settings = config.load(defaults)
 dofile(windower.addon_path .. 'debug/Debug.lua')
 dofile(windower.addon_path .. 'Logic/TargetLogic.lua')
 dofile(windower.addon_path .. 'Logic/TrustLogic.lua')
+-- PartyCommands depends on TrustLogic's shared party/status helpers.
+-- Load it after both shared logic modules so its command handlers and
+-- incoming-packet/chat listeners are registered before the addon is used.
+dofile(windower.addon_path .. 'Logic/PartyCommands.lua')
 -- INCOMING PACKETS
 windower.register_event('incoming chunk', function(id, data)
 if id ~= 0x028 then return end
@@ -342,6 +346,14 @@ print('//lazy join <name>   (same as them telling you the phrase)')
 print('//lazy join cancel')
 print('//lazy sync <name>   (level sync to that party member)')
 print('//lazy sync off')
+if Party_Command_Help then
+Party_Command_Help()
+end
+return
+end
+-- Give the party module first refusal for its commands (tnl, trust, party,
+-- join and sync). Commands it does not own return false and continue below.
+if Party_Command and Party_Command(command, args, raw_args) then
 return
 end
 if command == 'start' then
@@ -362,6 +374,10 @@ Clear_Combat_Target()
 end
 lockon_done = false
 Start_Engine = true
+-- Reset party-session state and start the party monitor with the main engine.
+if Party_Start then
+Party_Start()
+end
 -- RESET CAST TRACKING
 self_buff_last_cast = {}
 self_ability_last_cast = {}
@@ -413,6 +429,9 @@ coroutine.schedule(Trust_Monitor, 0)
 coroutine.schedule(Death_Monitor, 0)
 coroutine.schedule(Engagement_Sync, 0)
 coroutine.schedule(Burst_Monitor, 0)
+if Party_Monitor then
+coroutine.schedule(Party_Monitor, 0)
+end
 return
 end
 if command == 'stop' then
@@ -577,30 +596,6 @@ end
 if command == 'openmode' then
 Update_Job_Profile()
 Set_WS_Mode('open')
-return
-end
-if command == 'join' then
-if args[2] == 'cancel' then
-Party_Join_Cancel()
-return
-end
-if not raw_args[2] then
-print('//lazy join <name>  |  //lazy join cancel')
-return
-end
-Party_Join_Begin(raw_args[2])
-return
-end
-if command == 'sync' then
-if args[2] == 'off' then
-Clear_Level_Sync()
-return
-end
-if not raw_args[2] then
-print('//lazy sync <name>  |  //lazy sync off')
-return
-end
-Set_Level_Sync(raw_args[2])
 return
 end
 end)
