@@ -16,6 +16,11 @@ So far it:
   - Tracks your Trusts and resummons any that die
   - Lets someone join a running party: they send a tell, Lazy pauses,
     invites them, level syncs and rebalances the Trusts
+  - Takes party-chat commands (reset, go home, stop, start, hold, resume,
+    regroup, rebuff, tnl) from everyone running Lazy, or only from names you
+    trust
+  - Raises dead party members (WHM first, then SCH, RDM, PLD and sub-job
+    raisers), deals with Doom, and cleanses debuffs with WHM/SCH
 
 ### Installation
 
@@ -32,7 +37,9 @@ Logic/
   TargetLogic.lua   ALL targeting: choosing, combat lock, pathing, follow,
                     damage tracking, aggro queue, Combat, TurnToTarget
   TrustLogic.lua    trust tracking and resummon, party member jobs/levels,
-                    level sync, the party-join flow
+                    level sync
+  PartyCommands.lua party join ("chicken nuggets"), party-chat commands,
+                    rez, Doom and debuff cleansing, session stats, go home
   JobLogic.lua      cast helpers, weaponskill getters and modes
   HealBuffLogic.lua cure bot, buffs, debuffs, dispel (mage jobs only)
   RestLogic.lua     resting (mage jobs only)
@@ -42,6 +49,7 @@ Logic/
   magicburst.lua    magic bursts, BLM/SCH free nuke and weather failsafe
 debug/Debug.lua     debug logging and the /attack safety gate
 data/settings.xml   per-character settings, written by //lazy save
+                    (private: listed in .gitignore, keep it out of the repo)
 ```
 
 ### Commands
@@ -56,13 +64,13 @@ data/settings.xml   per-character settings, written by //lazy save
 * //lazy autotarget on|off
 * //lazy target "Some Monster"
 * //lazy fight
-* //lazy assist "Player Name"
 * //lazy range \<yalms\>
 * //lazy buffs on|off
 * //lazy cure on|off
 * //lazy rest on|off
 * //lazy burstmode
 * //lazy freenuke
+* //lazy nukeoff
 * //lazy chainmode
 * //lazy openmode
 * //lazy partychain
@@ -71,6 +79,10 @@ data/settings.xml   per-character settings, written by //lazy save
 * //lazy join cancel
 * //lazy sync \<name\>
 * //lazy sync off
+* //lazy trust add|remove \<name\>
+* //lazy trust list|clear
+* //lazy tnl
+* //lazy party \<phrase\>
 
 #### //lazy start
 Starts the helper. It records where you are standing as the origin (hunting
@@ -81,8 +93,11 @@ mode (no `//lazy follower <player>` target and autotarget is off) it defaults
 to leader mode, i.e. autotarget on. Running it again while Lazy is already
 running does nothing. It prints the weaponskill mode and nuke mode in use, so
 the defaults are visible (see [Defaults](#defaults)). It refuses to start
-while you are dead. If you die while it is running, Lazy tells you what
-killed you and stops.
+while you are dead. If you die while it is running and nobody else is alive
+in the party, Lazy tells you what killed you and stops. If other players are
+alive, the character asks the party for a rez instead and waits (see
+[Rez](#rez)); Lazy only stops if no raise arrives within `rez_timeout`
+seconds.
 
 #### //lazy stop
 Stops the helper. Your settings are kept.
@@ -227,6 +242,26 @@ same as doing it from the party menu.
 #### //lazy sync off
 Turns level sync off (the cap lifts after about 30 seconds).
 
+#### //lazy trust add|remove \<name\>, //lazy trust list|clear
+Manages who may use the [party commands](#party-commands). With an empty list
+(the default) everyone in the party can. Once there is a name on it, only
+listed players can. The list is saved straight away to the
+`<trusted_players>` entry of your character in `data/settings.xml`. `list`
+shows it, `clear` empties it (everyone allowed again). The "chicken nuggets"
+tell has its own `allowed_senders` list in `settings.lua`.
+
+#### //lazy tnl
+Prints this session's stats to the console: how long Lazy has run, kills,
+EXP and EXP per hour, limit points, and EXP to the next level with a rough
+time to get there. Counting starts at `//lazy start`. A kill is counted when
+you get EXP or limit points for it, so mobs that give nothing aren't counted.
+The same thing is printed after `go home`.
+
+#### //lazy party \<phrase\>
+Runs a [party command](#party-commands) on this character only, as if a
+trusted player had said it: `//lazy party reset`, `//lazy party go home`, and
+so on. Handy for testing.
+
 ### Defaults
 Nothing needs setting before `//lazy start`; these are what you get:
 
@@ -248,16 +283,22 @@ not case sensitive), and Lazy brings them into the party. Lazy must be
 started (`//lazy start`) for the tell to do anything.
 
 1. New pulls pause. A fight already in progress is allowed to finish (up to
-   `fight_timeout` seconds).
-2. Lazy invites them (`/pcmd add`) and waits up to `invite_timeout` seconds
-   for them to accept, re-sending the invite once halfway. If they never
-   accept, Lazy tells them so and goes back to botting.
+   `fight_timeout` seconds). Lazy only waits while you are fighting a live
+   monster: if you are engaged on nothing it disengages and carries on, and
+   it prints a line every 20 seconds while it is really waiting.
+2. If the party is full and Trusts are in it, Lazy dismisses them first
+   (`/retr all`) and waits for the slots to free up, because a full party
+   can't accept the invite. Then it invites them (`/pcmd add`) and waits up
+   to `invite_timeout` seconds for them to accept, re-sending the invite once
+   halfway. If they never accept, Lazy tells them so and goes back to
+   botting.
 3. Once they're in, Lazy reads their job and master level and level syncs the
    party to the lowest master level. **Only characters with master level 1 or
    higher count**: a non-master is ignored, because syncing to one would make
    everyone too weak to fight. No sync is sent if everyone counted is the
    same master level, if a sync is already active, or if Lazy doesn't know a
-   master level yet. If the sync doesn't take within a few seconds, Lazy
+   master level yet. Trusts that are still out are dismissed before the sync
+   is requested. If the sync doesn't take within a few seconds, Lazy
    says so and waits up to 45 seconds for you to do it from the party menu.
 4. The party has six slots and the new player took one, so Lazy works out how
    many trusts to leave out. A trust whose job matches the new player's goes
@@ -283,6 +324,129 @@ By default anyone who knows the phrase can use it, so put names in
 `allowed_senders` if you don't want that. Trust names are the ones shown in
 the party list (`Yoran-Oran`, not `Yoran-Oran (UC)`); the game has no job
 data for trusts, so `trust_jobs` is hardcoded.
+
+### Party commands
+Everyone running Lazy listens to party chat. Say one of these as the **whole
+line** (case doesn't matter) and every character running Lazy reacts for
+itself. Rename any of them under `party_commands.phrases` in `settings.lua`.
+Lazy has to be started on a character for it to react (except `start`).
+
+| Say | What happens |
+| --- | --- |
+| `reset` | Everyone re-anchors the origin where they stand and forgets which mobs it had given up on. For when someone got stuck behind a rock |
+| `go home` | Everyone warps out, then Lazy stops and prints the session stats (see below) |
+| `stop` / `start` | Stops or starts Lazy on everyone |
+| `hold` | No new pulls, fights in progress finish |
+| `resume` | Carries on after `hold` or `regroup`, with a new origin where each character is standing (the "camp here" command) |
+| `regroup` | Everyone runs to the party leader and holds. Say `resume` to carry on |
+| `rebuff` | Forgets every buff timer so all buffs are recast |
+| `tnl` | Each character prints its own session stats to its console (same as `//lazy tnl`) |
+
+#### How to use them in game
+1. Start Lazy on every character that should react (`//lazy start`). A
+   character that isn't running Lazy ignores all of this. `start` is the one
+   exception: it can start a stopped Lazy.
+2. Type the phrase in **party chat**, as the whole line and nothing else:
+   ```
+   /p reset
+   /p go home
+   /p hold
+   ```
+   (`/p` and `/party` both work.) Every character in the party that is running
+   Lazy reacts, including the one you typed it on. Each one prints a
+   `[Lazy] ...` line in chat so you can see it heard you.
+3. Typical flow after a mess: `/p hold` (stop pulling), `/p regroup` (everyone
+   runs to the leader), then `/p resume` (everyone carries on from where they
+   stand, new origin).
+4. To try a command on just one character, run `//lazy party <phrase>` in
+   that character's console, for example `//lazy party reset` or
+   `//lazy party go home`. It behaves as if a trusted player said it.
+
+Only **party chat** counts. Tells, say, shout and linkshell chat are ignored,
+and so is a line with anything extra in it (`/p please reset` does nothing).
+`rez`, Doom and debuff cleansing need no typing: they happen by themselves
+while Lazy is running (cleansing also needs `//lazy cure` on).
+
+If nothing happens:
+* Lazy isn't started on that character (`//lazy start`).
+* The sender isn't on your trusted list. You'll see
+  `Ignored "..." from <name> (not on the trusted list)`. Check
+  `//lazy trust list`, or `//lazy trust clear` to allow everyone.
+* It wasn't party chat, or the line had extra words in it.
+* You renamed the phrase in `settings.lua`; use the new one.
+
+**Who can use them.** By default everyone in the party. Add names with
+`//lazy trust add <name>` and only those players are listened to; anyone else
+gets one line in chat saying they were ignored. The list lives in
+`data/settings.xml` (`<trusted_players>`, comma separated), which is private
+to you: it is listed in `.gitignore` so character names stay out of the repo.
+If it was already committed once, run `git rm --cached data/settings.xml`.
+
+**go home.** Each character tries these in order, using the first it has:
+Warp Ring, Treat Staff, Warp Cudgel, Instant Warp. An item in a satchel,
+sack or case is moved to the inventory first; rings and staves are equipped
+(ring2 / main) and Lazy waits out the equip delay before using them. If
+nothing works it prints `go home command executed, no way home. Character has
+been logged out.` to the console and logs out. When the zone changes Lazy
+stops itself and prints the stats. A dead character skips it. The list of
+items is `party_commands.go_home_items`.
+
+#### Rez
+A character at 0 HP says `rez` in party chat and waits (the party pauses its
+pulls). Someone else raises them, in this order: WHM, SCH, RDM, PLD, then any
+other job whose sub job can raise (a GEO /WHM, for example). Each waits its
+turn (`rez_step` seconds apart, longer for the sub-job raisers) so only one
+casts, and says `rezzing` so the rest stand down. It casts the best raise it
+can at the level it has (Arise, Raise III, Raise II, Raise), walking into
+range first. The raised character accepts the raise prompt by itself, then
+the whole party waits until Weakness has worn off before botting again
+(`wait_for_weakness`, never longer than `rez_pause_max`). Trusts that died
+with the leader are resummoned by the normal Trust recovery. If nobody
+raises within `rez_timeout` seconds, Lazy stops on the dead character as it
+used to. GEO can't raise from its main job, which is why it comes last.
+
+#### Doom
+A doomed character says so in party chat **once**, uses Holy Water (if it has
+some in the inventory) every few seconds, and anyone who can cast Cursna
+(WHM or SCH, main or sub) casts it on them until the Doom is gone. If they
+die anyway, the rez above takes over.
+
+#### Debuff cleansing
+Characters that can cast the right spell (WHM and SCH, main or sub job) clear
+debuffs on party members within 20 yalms with no chat involved: Poisona,
+Paralyna, Blindna, Silena, Stona, Viruna (disease and plague), Cursna (curse
+and Doom) and Erase for Slow, Weight, Bind, Addle and the stat-down effects.
+Everyone waits a short turn first so two healers don't both cast. Add names
+to `party_commands.cleanse_ignore` to leave a debuff alone; **Evasion Down is
+ignored by default** because it is applied constantly. Needs `//lazy cure` on.
+
+Settings (all optional, in `settings.lua`):
+```lua
+party_commands = {
+    -- phrases = { go_home = 'go home' },   -- rename any phrase
+    rez_enabled = true,
+    rez_timeout = 180,         -- dead this long with no raise: Lazy stops
+    rez_step = 4,              -- seconds between each raiser's turn
+    rez_last_ditch_wait = 10,  -- extra wait for sub-job-only raisers
+    rez_give_up = 90,          -- stop working on one corpse after this long
+    rez_pause_max = 900,       -- never keep the party paused longer than this
+    wait_for_weakness = true,
+    raise_accept_param = 0,    -- try 1 if the dead character declines the raise
+    doom_holy_water = true,
+    holy_water_tries = 8,
+    cleanse_step = 2,
+    cleanse_ignore = { 'Evasion Down' },
+    regroup_timeout = 45,
+    go_home_items = {
+        { name = 'Warp Ring',   slot = 'ring2' },
+        { name = 'Treat Staff', slot = 'main' },
+        { name = 'Warp Cudgel', slot = 'main' },
+        { name = 'Instant Warp' },
+    },
+}
+```
+New party-chat phrases and `//lazy` commands live in `Logic/PartyCommands.lua`
+(`PHRASE_HANDLERS` and `Party_Command`).
 
 ### Magic burst timing
 Every job with magic burst (BLM, SCH, GEO, RDM, WHM, and NIN when its profile
@@ -454,7 +618,7 @@ Currently defined:
 
 | Job | What its profile does |
 | --- | --- |
-| RDM | Melee. Self buffs (Haste II, Temper II, Gain-STR, Enfire II), debuffs, party Haste II and Refresh III, Composure/Saboteur, Dispel, magic burst, emergency cures |
+| RDM | Melee. Self buffs (Haste II, Temper II, Gain-STR, Enfire II), debuffs (engage first, then debuffs, then everything else, and it holds a skillchain until they are cast), party Haste II and Refresh III, Composure/Saboteur, Dispel, magic burst, emergency cures |
 | WHM | Cure bot, Protectra/Shellra/Auspice and other self buffs, bursts Light with Holy II and Holy. No melee |
 | BLM | Magic burst (Tier VI cap) and free nuke (`//lazy freenuke`, tier IV and lower). No melee |
 | SCH | Magic burst and free nuke (`//lazy freenuke`), plus the cure bot when there is no WHM in the party |
@@ -492,6 +656,8 @@ Keys a profile can set (anything else in a profile is ignored):
 | `party_buffs` | `{ spell, targets ('ALL_PLAYERS' or { jobs = {...} }), interval, range, self }` |
 | `entrust_buffs` | Entrust + Indi spell on a chosen party member (GEO). `targets` is `{ jobs = {...} }`, `{ players_only = true }`, or `{ lone_leader_unknown_job = true }` (the only other player, job unreadable, holding party leader). Set `fallback = true` to use an entry only when no earlier entry has a target |
 | `debuffs`, `dispel` | debuffs on the target, and Dispel (only on `dispel_whitelist` mobs) |
+| `debuffs_engaged_only` | `true` = cast the debuffs only once engaged, not while the pull is still pending (RDM) |
+| `debuff_hold_hpp` | RDM: while a debuff is due and castable, weaponskills and nukes wait for it (at most 8 seconds). Above this mob HP% every debuff holds them; at or below it only the first one in the list does (default 50) |
 | `haste_active`, `haste_samba_active`, `haste_targets` | haste handling |
 | `magic_burst`, `burst_spells`, `magic_burst_requires_buff` | burst during skillchain windows: spell family (Fire, Blizzard, Aero, Stone, Thunder, Water, Darkness, Light) mapped to spells, best first |
 | `free_nuke`, `free_nuke_max_tier`, `free_nuke_weather` | BLM/SCH free nuke: on/off, highest tier cast outside bursts (default 4), storm failsafe (default on) |
@@ -516,7 +682,8 @@ on), `dispel_whitelist` (mobs Lazy may Dispel/Finale), `haste_blacklist`
 `partychain_prefer` (partychain tie-breaks),
 `nuke_weakness` / `nuke_default` (free nuke),
 `party_join`, `trust_jobs` and
-`trust_sacrifice_order` (see [Party join](#party-join)), `targeting`
+`trust_sacrifice_order` (see [Party join](#party-join)), `party_commands`
+(see [Party commands](#party-commands)), `targeting`
 (`monsters` list, `only_unclaimed`, `only_alive`, `within_origin`),
 `needed_buffs`, `food`, and `subjob_abilities` (for example Haste Samba for
 any job subbing DNC).
@@ -536,6 +703,7 @@ for that character.
 <buffs_active>true</buffs_active>
 <cure_active>true</cure_active>
 <rest_active>true</rest_active>
+<trusted_players></trusted_players>
 ```
 * spell - Spell to cast, will cast whenever MP and recast time allows
 * spell_active - true/false enables/disables casting of the spell
@@ -546,3 +714,5 @@ for that character.
 * assist - player to assist, empty for none
 * buffs_active, cure_active, rest_active - what `//lazy buffs`, `//lazy cure`
   and `//lazy rest` toggle
+* trusted_players - comma separated names allowed to use the party-chat
+  commands, empty = everyone. Managed with `//lazy trust`

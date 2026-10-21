@@ -984,13 +984,12 @@ local function Doom_Self_Tick(me)
 end
 
 -- SESSION STATS ("tnl")
-party_stats = { start = nil, kills = 0, exp = 0, lp = 0, exemplar = 0, cur = nil, req = nil }
+party_stats = { start = nil, kills = 0, exp = 0, lp = 0, cur = nil, req = nil }
 function Party_Stats_Reset()
     party_stats.start = os.time()
     party_stats.kills = 0
     party_stats.exp = 0
     party_stats.lp = 0
-    party_stats.exemplar = 0
 end
 local function Commas(n)
     local s = tostring(math.floor(n or 0))
@@ -1009,10 +1008,9 @@ function Party_Print_Stats()
     end
     local elapsed = math.max(1, os.time() - s.start)
     local per_hr = 3600 / elapsed
-    print(string.format('[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s | exemplar points: %s (%s/hr)',
+    print(string.format('[Lazy] Ran for %s | kills: %d (%.1f/hr) | EXP: %s (%s/hr) | limit points: %s',
         Fmt_Duration(elapsed), s.kills, s.kills * per_hr,
-        Commas(s.exp), Commas(s.exp * per_hr), Commas(s.lp),
-        Commas(s.exemplar), Commas(s.exemplar * per_hr)))
+        Commas(s.exp), Commas(s.exp * per_hr), Commas(s.lp)))
     if s.cur and s.req and s.req > 0 then
         local remaining = s.req - s.cur
         local line = '[Lazy] EXP to next level: ' .. Commas(remaining)
@@ -1034,29 +1032,16 @@ windower.register_event('incoming text', function(original)
     if not me then
         return
     end
-    -- Escape the player name before using it in Lua patterns.
-    local escaped_name = me.name:gsub('([^%w])', '%%%1')
-    local n = string.match(original, escaped_name .. ' gains (%d+) experience points')
+    local n = string.match(original, me.name .. ' gains (%d+) experience points')
     if n then
         party_stats.kills = party_stats.kills + 1
         party_stats.exp = party_stats.exp + tonumber(n)
         return
     end
-    n = string.match(original, escaped_name .. ' gains (%d+) limit points')
+    n = string.match(original, me.name .. ' gains (%d+) limit points')
     if n then
         party_stats.kills = party_stats.kills + 1
         party_stats.lp = party_stats.lp + tonumber(n)
-        return
-    end
-
-    -- Exemplar rewards are commonly displayed as "You gain N exemplar points."
-    -- Accept the character-name form too, for clients/localizations that use it.
-    n = string.match(original, '[Yy]ou gain (%d+) exemplar points')
-        or string.match(original, escaped_name .. ' gains (%d+) exemplar points')
-        or string.match(original, '[Yy]ou earn (%d+) exemplar points')
-        or string.match(original, escaped_name .. ' earns (%d+) exemplar points')
-    if n then
-        party_stats.exemplar = party_stats.exemplar + tonumber(n)
     end
 end)
 windower.register_event('incoming chunk', function(id, data)
@@ -1435,17 +1420,22 @@ windower.register_event('chat message', function(message, sender, mode, gm)
         return
     end
     local me = windower.ffxi.get_player()
-    if not me or string.lower(sender) == string.lower(me.name) then
+    if not me then
         return
     end
+    -- Our own party chat counts for the phrases (so /p hold works on the
+    -- character you typed it on) but never as someone else's "rezzing".
+    local is_self = string.lower(sender) == string.lower(me.name)
     local text = Normalize(message)
     if text == Phrase('rezzing') then
-        rez_claim_until = os.clock() + 25
+        if not is_self then
+            rez_claim_until = os.clock() + 25
+        end
         return
     end
     for name, handler in pairs(PHRASE_HANDLERS) do
         if text == Phrase(name) then
-            if not Party_Is_Trusted(sender) then
+            if not is_self and not Party_Is_Trusted(sender) then
                 Say('Ignored "' .. text .. '" from ' .. sender .. ' (not on the trusted list).')
                 return
             end
@@ -1536,7 +1526,7 @@ function Party_Command_Help()
     print('//lazy sync <name>   (level sync to that party member)')
     print('//lazy sync off')
     print('//lazy trust add|remove <name>  |  //lazy trust list|clear   (who may use party commands; empty = everyone)')
-    print('//lazy tnl   (session time, kills, EXP, limit points, exemplar points, EXP to next level)')
+    print('//lazy tnl   (session time, kills, EXP, EXP to next level)')
     print('//lazy party <phrase>   (run a party command locally)')
     print('Party chat: reset | go home | stop | start | hold | resume | regroup | rebuff | tnl')
 end
