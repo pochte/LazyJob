@@ -1400,6 +1400,8 @@ windower.send_command('input /ja "Provoke" <t>')
 end
 TurnToTarget()
 end
+-- Nearly dead target: just kill it (see Try_Finisher in magicburst.lua).
+if Try_Finisher and Try_Finisher() then return end
 local magic_burst_ok = active_profile and active_profile.magic_burst
 if magic_burst_ok and active_profile.magic_burst_requires_buff then
 magic_burst_ok = buffactive[active_profile.magic_burst_requires_buff]

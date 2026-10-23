@@ -635,3 +635,81 @@ function Get_Nuke_Mode_Text()
 	end
 	return 'burst only'
 end
+
+-- FINISHER (//lazy finisher): the target is almost dead, so just kill it.
+-- Overkill is fine, a living mob is not.
+--   nukers (auto_engage = false with free_nuke): Tier IV at finisher_hp%,
+--     Tier III at finisher_hp_low%, using the mob's known weakness element.
+--   everyone else: the chain starter at finisher_tp, no waiting on TP cap.
+-- Ignores skillchain/burst windows on purpose. Respects //lazy nukeoff.
+function Try_Finisher()
+	if finisher_enabled == false then
+		return false
+	end
+	if isCasting or isBusy > 0 or Is_Moving() then
+		return false
+	end
+	local player = windower.ffxi.get_player()
+	if not player or not player.vitals or player.vitals.hp <= 0 then
+		return false
+	end
+	if player.status ~= 1 then
+		return false
+	end
+	local target = windower.ffxi.get_mob_by_target('t')
+	if not target or type(target.hpp) ~= 'number' or target.hpp <= 0 then
+		return false
+	end
+	local hp_limit = finisher_hp or 10
+	if target.hpp > hp_limit then
+		return false
+	end
+	if not active_profile then
+		return false
+	end
+
+	-- Mage path
+	if active_profile.auto_engage == false then
+		if not active_profile.free_nuke or nuke_mode == 'off' then
+			return false
+		end
+		if not Nukeable(target, player) then
+			return false
+		end
+		local family = Nuke_Family_For(target)
+		if not family then
+			return false
+		end
+		local tier = (target.hpp <= (finisher_hp_low or 5)) and 3 or 4
+		local spell = res.spells:with('name', family .. ROMAN[tier])
+		local recasts = windower.ffxi.get_spell_recasts()
+		local known = windower.ffxi.get_spells()
+		if Spell_Ready(spell, player, recasts, known)
+			and player.vitals.mp >= spell.mp_cost
+		then
+			windower.send_command('input /ma "' .. spell.en .. '" <t>')
+			isBusy = Action_Delay
+			return true
+		end
+		return false
+	end
+
+	-- Melee path
+	if active_profile.use_weaponskills == false then
+		return false
+	end
+	local starter = Get_WS_Starter()
+	if not starter or not starter[1] then
+		return false
+	end
+	if player.vitals.tp < (finisher_tp or 1000) then
+		return false
+	end
+	if not target.distance or math.sqrt(target.distance) > 3 then
+		return false
+	end
+	windower.send_command('input /ws "' .. starter[1] .. '" <t>')
+	isBusy = Action_Delay
+	dnc_flourish_pending = true
+	return true
+end

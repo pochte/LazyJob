@@ -339,6 +339,7 @@ print('//lazy range <yalms>')
 print('//lazy burstmode   (BLM/SCH: nuke only during magic burst)')
 print('//lazy freenuke    (BLM/SCH: tier IV and lower on the target, V/VI for burst)')
 print('//lazy chainmode   (fire the full ordered ws_sc_chain)')
+print('//lazy finisher on/off/<hp%>  (kill a nearly-dead mob now: WS or Tier IV/III nuke)')
 print('//lazy partychain  (continue any open skillchain with the best weaponskill)')
 print('//lazy openmode    (opener + closers only)')
 print('//lazy retrust')
@@ -581,6 +582,19 @@ end
 if command == 'freenuke' then
 Update_Job_Profile()
 Set_Nuke_Mode('free')
+return
+end
+if command == 'finisher' then
+local arg = args[2]
+if arg == 'on' then
+finisher_enabled = true
+elseif arg == 'off' then
+finisher_enabled = false
+elseif tonumber(arg) then
+finisher_hp = tonumber(arg)
+finisher_enabled = true
+end
+windower.add_to_chat(207, '[Lazy] Finisher: ' .. ((finisher_enabled ~= false) and 'ON' or 'OFF') .. ' at ' .. tostring(finisher_hp or 10) .. '% HP')
 return
 end
 if command == 'partychain' then

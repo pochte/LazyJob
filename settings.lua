@@ -42,6 +42,15 @@ nuke_weakness = {
     { 'Crab',   'Blizzard' },
 }
 -- nuke_default = 'Thunder'
+-- FINISHER (//lazy finisher on/off, //lazy finisher <hp%>)
+-- When the target is at or under finisher_hp % HP, stop waiting and kill it.
+-- Melee jobs fire their chain starter at finisher_tp TP (no waiting on TP cap
+-- or the chain order). BLM/SCH/GEO cast Tier IV, or Tier III at/under
+-- finisher_hp_low %. On by default.
+finisher_enabled = true
+finisher_hp      = 10
+finisher_hp_low  = 5
+finisher_tp      = 1000
 -- ORDERED SKILLCHAIN (optional, works in a profile too)
 -- Up to 5 weaponskills fired in this exact order. Entry 1 opens, the
 -- chain stops after the last entry. An entry is a name, or { name, min_tp }
