@@ -28,6 +28,21 @@ local DNC_FILLER_ABILITIES = {
 -- os.time() measures wall-clock seconds, unlike os.clock(),
 -- which measures CPU time.
 local dnc_debuff_since = nil
+-- Finishing Move stacks. The game has no buff called plain 'Finishing Move':
+-- the buffs are 'Finishing Move 1' .. 'Finishing Move 5' and
+-- 'Finishing Move (6+)'. Reading buffactive['Finishing Move'] always gave
+-- nil, so stacks was stuck at 0 and the rotation never stopped Box Stepping.
+local function DNC_Finishing_Moves()
+    if buffactive['Finishing Move (6+)'] then
+        return 6
+    end
+    for n = 5, 1, -1 do
+        if buffactive['Finishing Move ' .. n] then
+            return n
+        end
+    end
+    return 0
+end
 -- RESET
 function Reset_DNC_Opening()
     dnc_opening_step = 1
@@ -141,7 +156,7 @@ function Try_DNC_Actions()
         or math.sqrt(target.distance) > 5 then
         return false
     end
-    local stacks = buffactive['Finishing Move'] or 0
+    local stacks = DNC_Finishing_Moves()
 -- OPENING SETUP
 -- Box Step → Presto → Box Step → Presto.
     if dnc_opening_step <= 4 then
@@ -207,6 +222,19 @@ function Try_DNC_Actions()
         isBusy = Action_Delay
         dnc_flourish_pending = false
         return true
+    end
+    -- WEAPONSKILL FIRST
+    -- Fan Dance / Box Step upkeep are always "available" on their short
+    -- recasts, so this function kept returning true and Combat() never got
+    -- to its weaponskill code. When a WS is ready and the target is in
+    -- melee range, hand control back so the WS fires.
+    if player.vitals.tp
+        and player.vitals.tp >= ws_min_tp
+        and ws_starter
+        and active_profile
+        and active_profile.use_weaponskills ~= false
+        and math.sqrt(target.distance) <= 3 then
+        return false
     end
     -- BOX STEP MAINTENANCE 
     if stacks < 5 and Can_Cast_Ability('Box Step') then
